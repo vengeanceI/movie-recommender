@@ -1,12 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import ast
 import requests
 import pickle
 from io import StringIO
+
+# Try to import sklearn components with error handling
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    st.error("⚠️ sklearn not properly installed. Using fallback similarity calculation.")
 
 # Set page config
 st.set_page_config(
@@ -120,22 +127,50 @@ def preprocess_data(df):
     
     return df
 
+def calculate_simple_similarity(df):
+    """Fallback similarity calculation without sklearn"""
+    n_movies = len(df)
+    similarity_matrix = np.zeros((n_movies, n_movies))
+    
+    for i in range(n_movies):
+        for j in range(n_movies):
+            if i == j:
+                similarity_matrix[i][j] = 1.0
+            else:
+                # Simple word overlap similarity
+                words_i = set(df.iloc[i]['soup'].lower().split())
+                words_j = set(df.iloc[j]['soup'].lower().split())
+                
+                if len(words_i) > 0 and len(words_j) > 0:
+                    intersection = len(words_i.intersection(words_j))
+                    union = len(words_i.union(words_j))
+                    similarity_matrix[i][j] = intersection / union if union > 0 else 0
+                else:
+                    similarity_matrix[i][j] = 0
+    
+    return similarity_matrix
+
 @st.cache_data
 def build_recommender(df):
     """Build the recommendation system"""
-    # Create TF-IDF matrix
-    tfidf = TfidfVectorizer(
-        max_features=5000,
-        stop_words='english',
-        max_df=0.8,
-        min_df=1,
-        ngram_range=(1, 2)
-    )
-    
-    tfidf_matrix = tfidf.fit_transform(df['soup'])
-    
-    # Calculate cosine similarity
-    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+    if SKLEARN_AVAILABLE:
+        # Create TF-IDF matrix
+        tfidf = TfidfVectorizer(
+            max_features=5000,
+            stop_words='english',
+            max_df=0.8,
+            min_df=1,
+            ngram_range=(1, 2)
+        )
+        
+        tfidf_matrix = tfidf.fit_transform(df['soup'])
+        
+        # Calculate cosine similarity
+        cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+    else:
+        # Fallback: Simple text similarity based on common words
+        cosine_sim = calculate_simple_similarity(df)
+        tfidf_matrix = None
     
     # Create title to index mapping
     indices = pd.Series(df.index, index=df['title']).drop_duplicates()
