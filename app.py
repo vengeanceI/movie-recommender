@@ -6,6 +6,14 @@ import pickle
 import os
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import os
+
+# ADD THIS:
+try:
+    from setup_data import download_tmdb_data
+except Exception:
+    download_tmdb_data = None
+
 
 # Page config
 st.set_page_config(
@@ -103,7 +111,7 @@ def get_movie_poster(movie_title, tmdb_id=None):
     """Get movie poster from TMDB API"""
     try:
         # TMDB API key - you can get this free from https://www.themoviedb.org/settings/api
-        api_key = "8265bd1679663a7ea12ac168da84d2e8"  # Replace with your API key
+        api_key = "65fc826f62592ec1235e593cf3479495"  # Replace with your API key
         
         if tmdb_id:
             url = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={api_key}"
@@ -152,6 +160,15 @@ def recommend_movies(movie_title, movies_df, similarity_matrix, n_recommendation
         return pd.DataFrame()
 
 def main():
+    # Ensure dataset exists (auto-download if missing)
+missing = not (os.path.exists("tmdb_5000_movies.csv") and os.path.exists("tmdb_5000_credits.csv"))
+if missing and download_tmdb_data is not None:
+    with st.spinner("📥 Downloading TMDB dataset (first run)…"):
+        ok = download_tmdb_data()
+        if not ok:
+            st.error("Could not download dataset automatically. Please try again later.")
+            st.stop()
+
     # Header
     st.title("🎬 TMDB Movie Recommendation System")
     st.markdown("*Powered by TMDB 5000 Dataset*")
