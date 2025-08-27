@@ -1,655 +1,4 @@
-import streamlit as st
-import pandas as pd
-import requests
-import json
-import gzip
-import io
-import re
-from difflib import SequenceMatcher
-try:
-    from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    try:
-        import sklearn
-        from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
-        SKLEARN_AVAILABLE = True
-    except ImportError:
-        SKLEARN_AVAILABLE = False
-        import random
-        def simple_recommend(movies_df, selected_title, n_recommendations=5):
-            """Simple genre-based recommendation fallback"""
-            try:
-                selected_movie = movies_df[movies_df['title'] == selected_title].iloc[0]
-                selected_genres = selected_movie['genres'].lower()
-                
-                similar_movies = movies_df[
-                    (movies_df['title'] != selected_title) & 
-                    (movies_df['genres'].str.lower().str.contains('|'.join(selected_genres.split()[:2]), na=False))
-                ].copy()
-                
-                if len(similar_movies) < n_recommendations:
-                    additional = movies_df[
-                        (movies_df['title'] != selected_title) & 
-                        (~movies_df['title'].isin(similar_movies['title']))
-                    ].nlargest(n_recommendations - len(similar_movies), 'vote_average')
-                    similar_movies = pd.concat([similar_movies, additional])
-                
-                result = similar_movies.head(n_recommendations).copy()
-                result['similarity_score'] = [0.8 - i*0.1 for i in range(len(result))]
-                return result
-            except:
-                return pd.DataFrame()
-
-# Page config
-st.set_page_config(
-    page_title="Cinema Vault - Movie Recommender",
-    page_icon="🎬",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# Custom CSS for Cinema Vault theme
-st.markdown("""
-<style>
-/* Import Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-/* Global Styles */
-.stApp {
-    background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #21262d 100%);
-    font-family: 'Inter', sans-serif;
-}
-
-/* Hide Streamlit branding */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
-
-/* Header styling */
-.main-header {
-    background: rgba(33, 38, 45, 0.95);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(48, 54, 61, 0.8);
-    border-radius: 20px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    text-align: center;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-
-.main-title {
-    font-size: 3.5rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 50%, #0969da 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 0.5rem;
-    text-shadow: 0 0 30px rgba(88, 166, 255, 0.3);
-}
-
-.main-subtitle {
-    font-size: 1.2rem;
-    color: #8b949e;
-    font-weight: 300;
-    margin-bottom: 2rem;
-}
-
-/* Stats section */
-.stats-container {
-    display: flex;
-    justify-content: center;
-    gap: 3rem;
-    margin-top: 2rem;
-}
-
-.stat-item {
-    text-align: center;
-}
-
-.stat-number {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: #58a6ff;
-    display: block;
-    text-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
-}
-
-.stat-label {
-    font-size: 1rem;
-    color: #8b949e;
-    font-weight: 400;
-    margin-top: 0.5rem;
-}
-
-/* Hero Section */
-.hero-section {
-    background: rgba(33, 38, 45, 0.8);
-    border: 1px solid rgba(48, 54, 61, 0.6);
-    border-radius: 20px;
-    padding: 2.5rem;
-    margin-bottom: 3rem;
-    backdrop-filter: blur(10px);
-}
-
-.hero-title {
-    font-size: 3rem;
-    font-weight: 600;
-    color: #f0f6fc;
-    text-align: center;
-    margin-bottom: 1rem;
-}
-
-.hero-gradient-text {
-    background: linear-gradient(135deg, #39d353 0%, #26a641 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.hero-description {
-    font-size: 1.1rem;
-    color: #8b949e;
-    text-align: center;
-    margin-bottom: 2rem;
-    line-height: 1.6;
-}
-
-/* Search section */
-.search-section {
-    background: rgba(33, 38, 45, 0.6);
-    border: 1px solid rgba(48, 54, 61, 0.8);
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-}
-
-/* Movie cards */
-.movie-card {
-    background: rgba(33, 38, 45, 0.8);
-    border: 1px solid rgba(48, 54, 61, 0.8);
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    backdrop-filter: blur(10px);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    min-height: 200px;
-}
-
-.movie-card:hover {
-    border-color: rgba(88, 166, 255, 0.6);
-    box-shadow: 0 8px 25px rgba(88, 166, 255, 0.15);
-    transform: translateY(-2px);
-}
-
-.movie-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #58a6ff, #1f6feb);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.movie-card:hover::before {
-    opacity: 1;
-}
-
-.movie-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: #f0f6fc;
-    margin-bottom: 0.8rem;
-}
-
-.movie-rating {
-    display: inline-block;
-    background: linear-gradient(135deg, #ffd700, #ffb700);
-    color: #000;
-    padding: 0.4rem 1rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    margin-right: 1rem;
-}
-
-.movie-genre {
-    color: #58a6ff;
-    font-size: 1rem;
-    font-weight: 500;
-}
-
-.movie-description {
-    color: #c9d1d9;
-    font-size: 1rem;
-    line-height: 1.7;
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background: rgba(13, 17, 23, 0.6);
-    border-radius: 8px;
-    border-left: 3px solid #39d353;
-}
-
-.movie-meta {
-    display: flex;
-    gap: 1.5rem;
-    margin-top: 1.5rem;
-    font-size: 0.95rem;
-    color: #8b949e;
-}
-
-.match-score {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: linear-gradient(135deg, #39d353, #26a641);
-    color: #fff;
-    padding: 0.4rem 0.8rem;
-    border-radius: 12px;
-    font-weight: 600;
-    font-size: 0.85rem;
-}
-
-/* Section headers */
-.section-header {
-    font-size: 2rem;
-    font-weight: 600;
-    color: #f0f6fc;
-    margin: 2rem 0 1.5rem 0;
-    text-align: center;
-}
-
-.selected-movie-info {
-    background: rgba(33, 38, 45, 0.9);
-    border: 1px solid rgba(48, 54, 61, 0.8);
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    display: flex;
-    gap: 2rem;
-    align-items: flex-start;
-    min-height: 400px;
-}
-
-.movie-poster {
-    flex-shrink: 0;
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-.movie-info-content {
-    flex: 1;
-    min-height: 350px;
-}
-
-.movie-info-title {
-    font-size: 1.8rem;
-    font-weight: 600;
-    color: #f0f6fc;
-    margin-bottom: 1rem;
-}
-
-.movie-info-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.95rem;
-}
-
-.movie-info-plot {
-    color: #c9d1d9;
-    line-height: 1.7;
-    font-size: 1rem;
-    margin-bottom: 1.5rem;
-    max-height: none;
-    overflow: visible;
-    padding: 1rem;
-    background: rgba(13, 17, 23, 0.6);
-    border-radius: 8px;
-    border-left: 3px solid #58a6ff;
-}
-
-/* Custom button styling */
-.stButton > button {
-    background: linear-gradient(135deg, #58a6ff, #1f6feb);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.5rem 1.5rem;
-    font-weight: 600;
-    transition: all 0.3s ease;
-}
-
-.stButton > button:hover {
-    background: linear-gradient(135deg, #1f6feb, #0969da);
-    box-shadow: 0 5px 15px rgba(88, 166, 255, 0.4);
-    transform: translateY(-1px);
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-    .main-title {
-        font-size: 2.5rem;
-    }
-    
-    .hero-title {
-        font-size: 2rem;
-    }
-    
-    .stats-container {
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-    
-    .selected-movie-info {
-        flex-direction: column;
-    }
-    
-    .movie-poster {
-        align-self: center;
-    }
-}
-
-.search-results-header {
-    color: #58a6ff;
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 1rem 0 0.5rem 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(48, 54, 61, 0.6);
-}
-
-.no-results {
-    background: rgba(139, 148, 158, 0.1);
-    border: 1px solid rgba(139, 148, 158, 0.3);
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 1rem 0;
-    color: #8b949e;
-    text-align: center;
-}
-
-.actor-bio {
-    background: rgba(33, 38, 45, 0.6);
-    border: 1px solid rgba(48, 54, 61, 0.6);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    color: #c9d1d9;
-}
-
-.genre-description {
-    background: rgba(33, 38, 45, 0.6);
-    border: 1px solid rgba(48, 54, 61, 0.6);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    color: #c9d1d9;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# TMDB API key from Streamlit secrets
-try:
-    TMDB_API_KEY = st.secrets["TMDB_API_KEY"]
-except:
-    TMDB_API_KEY = None
-
-# GitHub repository configuration
-GITHUB_REPO_URL = "https://raw.githubusercontent.com/vengeanceI/movie-recommender/main/"
-MOVIES_FILE = "tmdb_5000_movies.csv"
-CREDITS_FILE = "tmdb_credits_maximum.csv"
-
-@st.cache_data
-def load_data_from_github():
-    """Load movie and credits data from GitHub repository"""
-    movies_df = None
-    credits_df = None
-    
-    try:
-        movies_url = f"{GITHUB_REPO_URL}{MOVIES_FILE}"
-        movies_response = requests.get(movies_url, timeout=30)
-        movies_response.raise_for_status()
-        
-        movies_df = pd.read_csv(io.StringIO(movies_response.text))
-        
-        credits_url = f"{GITHUB_REPO_URL}{CREDITS_FILE}"
-        credits_response = requests.get(credits_url, timeout=30)
-        credits_response.raise_for_status()
-        
-        credits_df = pd.read_csv(io.StringIO(credits_response.text))
-        
-        if credits_df is not None:
-            if 'movie_id' in credits_df.columns:
-                movies_df = movies_df.merge(credits_df, left_on='id', right_on='movie_id', how='left')
-            else:
-                movies_df = movies_df.merge(credits_df, on='id', how='left')
-        
-        movies_df = process_movie_data(movies_df)
-        return movies_df
-        
-    except Exception as e:
-        st.error(f"Error loading data from GitHub: {e}")
-        return create_fallback_data()
-
-@st.cache_data
-def load_movie_data():
-    """Main data loading function"""
-    try:
-        return load_data_from_github()
-    except Exception as e:
-        return create_fallback_data()
-
-def process_movie_data(movies_df):
-    """Process and clean movie data with enhanced credits handling"""
-    try:
-        essential_cols = ['id', 'title', 'overview', 'genres', 'vote_average', 'vote_count', 
-                         'popularity', 'release_date', 'runtime']
-        
-        optional_cols = ['cast', 'crew', 'keywords']
-        available_cols = essential_cols + [col for col in optional_cols if col in movies_df.columns]
-        
-        movies_df = movies_df[available_cols].copy()
-        movies_df = movies_df.dropna(subset=['title', 'overview'])
-        movies_df = movies_df[movies_df['overview'].str.len() > 10]
-        
-        def extract_genre_names(text):
-            try:
-                if pd.isna(text) or text == '':
-                    return 'Unknown'
-                data = json.loads(text.replace("'", '"'))
-                if isinstance(data, list):
-                    return ' '.join([item['name'] for item in data[:3] if 'name' in item])
-                return str(text)
-            except:
-                return str(text) if pd.notna(text) else 'Unknown'
-        
-        movies_df['genres'] = movies_df['genres'].fillna('[]').apply(extract_genre_names)
-        
-        if 'keywords' in movies_df.columns:
-            def extract_keywords(text):
-                try:
-                    if pd.isna(text) or text == '':
-                        return ''
-                    data = json.loads(text.replace("'", '"'))
-                    if isinstance(data, list):
-                        return ' '.join([item['name'] for item in data[:5] if 'name' in item])
-                    return ''
-                except:
-                    return ''
-            movies_df['keywords'] = movies_df['keywords'].fillna('[]').apply(extract_keywords)
-        
-        if 'cast' in movies_df.columns:
-            def extract_cast_names(text):
-                try:
-                    if pd.isna(text) or text == '':
-                        return ''
-                    data = json.loads(text.replace("'", '"'))
-                    if isinstance(data, list):
-                        cast_names = [actor['name'] for actor in data[:10] if 'name' in actor]
-                        return ' | '.join(cast_names)
-                    return str(text)
-                except:
-                    return str(text) if pd.notna(text) else ''
-            
-            movies_df['cast'] = movies_df['cast'].fillna('[]').apply(extract_cast_names)
-            
-            # Create searchable cast field
-            movies_df['cast_searchable'] = movies_df['cast'].str.lower().str.replace('|', ' ')
-        
-        if 'crew' in movies_df.columns:
-            def extract_director(text):
-                try:
-                    if pd.isna(text) or text == '':
-                        return ''
-                    data = json.loads(text.replace("'", '"'))
-                    if isinstance(data, list):
-                        directors = []
-                        for person in data:
-                            if person.get('job') == 'Director':
-                                directors.append(person['name'])
-                        return ' | '.join(directors[:3])
-                    return ''
-                except:
-                    return ''
-            
-            movies_df['director'] = movies_df['crew'].apply(extract_director)
-            movies_df['director_searchable'] = movies_df['director'].str.lower().str.replace('|', ' ')
-        
-        # Create combined features for similarity calculation
-        feature_components = [
-            movies_df['overview'].fillna(''),
-            movies_df['genres'].fillna(''),
-        ]
-        
-        if 'cast' in movies_df.columns:
-            cast_clean = movies_df['cast'].fillna('').str.replace('|', ' ')
-            feature_components.append(cast_clean)
-        
-        if 'director' in movies_df.columns:
-            feature_components.append(movies_df['director'].fillna(''))
-        
-        if 'keywords' in movies_df.columns:
-            feature_components.append(movies_df['keywords'].fillna(''))
-        
-        movies_df['combined_features'] = ''
-        for component in feature_components:
-            movies_df['combined_features'] += ' ' + component.astype(str)
-        
-        movies_df['combined_features'] = movies_df['combined_features'].str.strip()
-        
-        return movies_df.reset_index(drop=True)
-        
-    except Exception as e:
-        st.error(f"Error processing movie data: {e}")
-        return movies_df
-
-def create_fallback_data():
-    """Create comprehensive sample data if GitHub files are unavailable"""
-    sample_data = [
-        {"id": 19995, "title": "Avatar", "genres": "Action Adventure Fantasy", "vote_average": 7.2, "overview": "In the 22nd century, a paraplegic Marine is dispatched to the moon Pandora on a unique mission, but becomes torn between following orders and protecting an alien civilization. Avatar takes us to a spectacular world beyond imagination, where a reluctant hero embarks on a journey of redemption and discovery as he leads a heroic battle to save a civilization.", "cast": "Sam Worthington | Zoe Saldana | Sigourney Weaver | Stephen Lang | Michelle Rodriguez", "director": "James Cameron", "release_date": "2009-12-18", "runtime": 162, "vote_count": 11800, "popularity": 150.437},
-        {"id": 285, "title": "Pirates of the Caribbean: The Curse of the Black Pearl", "genres": "Adventure Fantasy Action", "vote_average": 7.8, "overview": "Blacksmith Will Turner teams up with eccentric pirate Captain Jack Sparrow to save his love, the governor's daughter, from Jack's former pirate allies, who are now undead. This swashbuckling tale of adventure on the high seas brings supernatural elements and unforgettable characters together in an epic story of love, betrayal, and redemption.", "cast": "Johnny Depp | Orlando Bloom | Keira Knightley | Geoffrey Rush | Jack Davenport", "director": "Gore Verbinski", "release_date": "2003-07-09", "runtime": 143, "vote_count": 8945, "popularity": 123.456},
-        {"id": 550, "title": "Fight Club", "genres": "Drama Thriller", "vote_average": 8.4, "overview": "A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy. Their concept catches on, with underground fight clubs forming in every town, until an eccentric gets in the way and ignites an out-of-control spiral toward oblivion.", "cast": "Brad Pitt | Edward Norton | Helena Bonham Carter | Meat Loaf | Jared Leto", "director": "David Fincher", "release_date": "1999-10-15", "runtime": 139, "vote_count": 15420, "popularity": 89.234},
-        {"id": 155, "title": "The Dark Knight", "genres": "Action Crime Drama", "vote_average": 8.5, "overview": "Batman raises the stakes in his war on crime. With the help of Lt. Jim Gordon and District Attorney Harvey Dent, Batman sets out to dismantle the remaining criminal organizations that plague the streets. The partnership proves to be effective, but they soon find themselves prey to a reign of chaos unleashed by a rising criminal mastermind known to the terrified citizens of Gotham as the Joker.", "cast": "Christian Bale | Heath Ledger | Aaron Eckhart | Michael Caine | Maggie Gyllenhaal", "director": "Christopher Nolan", "release_date": "2008-07-18", "runtime": 152, "vote_count": 18500, "popularity": 140.789},
-        {"id": 157336, "title": "Interstellar", "genres": "Adventure Drama Science Fiction", "vote_average": 8.1, "overview": "The adventures of a group of explorers who make use of a newly discovered wormhole to surpass the limitations on human space travel and conquer the vast distances involved in an interstellar voyage. In Earth's future, a global crop blight and second Dust Bowl are slowly rendering the planet uninhabitable.", "cast": "Matthew McConaughey | Anne Hathaway | Jessica Chastain | Michael Caine | Matt Damon", "director": "Christopher Nolan", "release_date": "2014-11-07", "runtime": 169, "vote_count": 16789, "popularity": 132.567},
-        {"id": 122, "title": "The Lord of the Rings: The Return of the King", "genres": "Adventure Drama Action", "vote_average": 8.3, "overview": "Aragorn is revealed as the heir to the ancient kings as he, Gandalf and the other members of the broken fellowship struggle to save Gondor from Sauron's forces. Meanwhile, Frodo and Sam bring the ring closer to the heart of Mordor, the dark lord's realm.", "cast": "Elijah Wood | Ian McKellen | Viggo Mortensen | Sean Astin | Orlando Bloom", "director": "Peter Jackson", "release_date": "2003-12-17", "runtime": 201, "vote_count": 14567, "popularity": 98.345},
-        {"id": 238, "title": "The Godfather", "genres": "Drama Crime", "vote_average": 8.7, "overview": "Spanning the years 1945 to 1955, a chronicle of the fictional Italian-American Corleone crime family. When organized crime family patriarch, Vito Corleone barely survives an attempt on his life, his youngest son, Michael steps in to take care of the would-be killers, launching a campaign of bloody revenge.", "cast": "Marlon Brando | Al Pacino | James Caan | Diane Keaton | Robert Duvall", "director": "Francis Ford Coppola", "release_date": "1972-03-24", "runtime": 175, "vote_count": 12890, "popularity": 87.654},
-        {"id": 13, "title": "Forrest Gump", "genres": "Comedy Drama Romance", "vote_average": 8.2, "overview": "A man with a low IQ has accomplished great things in his life and been present during significant historic events—in each case, far exceeding what anyone imagined he could do. But despite all he has achieved, his one true love eludes him.", "cast": "Tom Hanks | Robin Wright | Gary Sinise | Sally Field | Mykelti Williamson", "director": "Robert Zemeckis", "release_date": "1994-07-06", "runtime": 142, "vote_count": 13456, "popularity": 105.432},
-        {"id": 769, "title": "Goodfellas", "genres": "Drama Crime", "vote_average": 8.2, "overview": "The true story of Henry Hill, a half-Irish, half-Sicilian Brooklyn kid who is adopted by neighbourhood gangsters at an early age and climbs the ranks of a Mafia family under the guidance of Jimmy Conway.", "cast": "Robert De Niro | Ray Liotta | Joe Pesci | Lorraine Bracco | Paul Sorvino", "director": "Martin Scorsese", "release_date": "1990-09-21", "runtime": 146, "vote_count": 9876, "popularity": 76.543},
-        {"id": 278, "title": "The Shawshank Redemption", "genres": "Drama", "vote_average": 8.7, "overview": "Framed in the 1940s for the double murder of his wife and her lover, upstanding banker Andy Dufresne begins a new life at the Shawshank prison, where he puts his accounting skills to work for an amoral warden. During his long stretch in prison, Dufresne comes to be admired by the other inmates -- including an older prisoner named Red -- for his integrity and unquenchable sense of hope.", "cast": "Tim Robbins | Morgan Freeman | Bob Gunton | William Sadler | Clancy Brown", "director": "Frank Darabont", "release_date": "1994-09-23", "runtime": 142, "vote_count": 17890, "popularity": 94.123}
-    ]
-    
-    df = pd.DataFrame(sample_data)
-    
-    # Add searchable fields
-    df['cast_searchable'] = df['cast'].str.lower().str.replace('|', ' ')
-    df['director_searchable'] = df['director'].str.lower().str.replace('|', ' ')
-    
-    # Create combined features
-    df['combined_features'] = df['overview'] + ' ' + df['genres'] + ' ' + df['cast'] + ' ' + df['director']
-    df['keywords'] = ''
-    
-    return df
-
-@st.cache_data
-def create_similarity_matrix(movies_df):
-    """Create enhanced similarity matrix for recommendations"""
-    if not SKLEARN_AVAILABLE:
-        return None
-        
-    try:
-        # Use TfidfVectorizer for better results
-        tfidf = TfidfVectorizer(
-            max_features=10000,
-            stop_words='english',
-            lowercase=True,
-            ngram_range=(1, 3),
-            min_df=1,
-            max_df=0.8
-        )
-        
-        vectors = tfidf.fit_transform(movies_df['combined_features']).toarray()
-        similarity = cosine_similarity(vectors)
-        
-        return similarity
-        
-    except Exception as e:
-        st.error(f"Error creating similarity matrix: {e}")
-        return None
-
-def get_movie_poster(movie_title, tmdb_id=None):
-    """Get movie poster from TMDB API with fallback"""
-    try:
-        if not TMDB_API_KEY:
-            return "https://via.placeholder.com/300x450/1f1f1f/ffffff?text=🎬+No+API+Key"
-            
-        if tmdb_id:
-            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
-        else:
-            url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_title}"
-        
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        
-        poster_path = None
-        if tmdb_id and 'poster_path' in data:
-            poster_path = data['poster_path']
-        elif 'results' in data and data['results'] and data['results'][0].get('poster_path'):
-            poster_path = data['results'][0]['poster_path']
-        
-        if poster_path:
-            return f"https://image.tmdb.org/t/p/w300{poster_path}"
-            
-    except:
-        pass
-    
-    return "https://via.placeholder.com/300x450/1f1f1f/ffffff?text=🎬+No+Poster"
-
-def similarity_score(a, b):
-    """Calculate string similarity"""
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-
-def advanced_search(movies_df, query, search_type="auto"):
-    """Enhanced search function with intelligent categorization"""
-    if not query or len(query.strip()) < 2:
-        return pd.DataFrame(), "auto", ""
-    
-    query = query.lower().strip()
-    results = []
-    
-    # Always search across all categories for better results
-    search_categories = ["title", "actor", "director", "genre", "plot"]
-    
-    # Detect primary search type for display purposes
-    if search_type == "auto":
-        common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
+common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
                         'johnny depp', 'morgan freeman', 'samuel l jackson', 'matt damon', 'christian bale',
                         'scarlett johansson', 'jennifer lawrence', 'angelina jolie', 'meryl streep',
                         'denzel washington', 'tom cruise', 'robert de niro', 'al pacino', 'heath ledger']
@@ -684,6 +33,8 @@ def advanced_search(movies_df, query, search_type="auto"):
                 search_type = "title"
         else:
             search_type = "title"
+
+    # Search across ALL categories to get comprehensive results
     
     # Movie title search - exact matches first
     exact_matches = movies_df[movies_df['title'].str.lower() == query]
@@ -699,9 +50,8 @@ def advanced_search(movies_df, query, search_type="auto"):
         score = 85 + similarity_score(query, movie['title']) * 15
         results.append((movie, score, "partial_title"))
     
-    # Actor/Cast search - check if cast columns exist and have data
+    # Actor/Cast search - get ALL movies with this actor
     if 'cast' in movies_df.columns:
-        # Create a temporary searchable cast field if it doesn't exist
         if 'cast_searchable' not in movies_df.columns:
             movies_df['cast_searchable'] = movies_df['cast'].fillna('').str.lower().str.replace('|', ' ')
         
@@ -720,9 +70,8 @@ def advanced_search(movies_df, query, search_type="auto"):
                 score += 10
             results.append((movie, score, "actor"))
     
-    # Director search - check if director columns exist and have data
+    # Director search - get ALL movies by this director
     if 'director' in movies_df.columns:
-        # Create searchable director field if needed
         if 'director_searchable' not in movies_df.columns:
             movies_df['director_searchable'] = movies_df['director'].fillna('').str.lower().str.replace('|', ' ')
         
@@ -737,7 +86,7 @@ def advanced_search(movies_df, query, search_type="auto"):
                 score += 15
             results.append((movie, score, "director"))
     
-    # Genre search
+    # Genre search - get ALL movies in this genre
     genre_matches = movies_df[
         movies_df['genres'].str.lower().str.contains(re.escape(query), na=False)
     ]
@@ -799,11 +148,15 @@ def advanced_search(movies_df, query, search_type="auto"):
     # Sort by score (descending) then by popularity/rating for ties
     unique_results.sort(key=lambda x: (x[1], x[0]['vote_average'], x[0]['popularity']), reverse=True)
     
-    # Convert back to DataFrame and add match info
-    result_df = pd.DataFrame([movie for movie, _, _ in unique_results[:30]])
+    # For actor/director searches, get more results to show their filmography
+    if search_type in ["actor", "director"]:
+        result_df = pd.DataFrame([movie for movie, _, _ in unique_results[:50]])  # More results for people
+    else:
+        result_df = pd.DataFrame([movie for movie, _, _ in unique_results[:30]])
+    
     if len(result_df) > 0:
-        match_types = [match_type for _, _, match_type in unique_results[:30]]
-        scores = [score for _, score, _ in unique_results[:30]]
+        match_types = [match_type for _, _, match_type in unique_results[:len(result_df)]]
+        scores = [score for _, score, _ in unique_results[:len(result_df)]]
         result_df['match_type'] = match_types
         result_df['search_score'] = scores
     
@@ -973,7 +326,66 @@ def recommend_movies(movie_title, movies_df, similarity_matrix, n_recommendation
         st.error(f"Error getting recommendations: {e}")
         return pd.DataFrame()
 
+def create_movie_card(movie, show_match_score=False, similarity_score_pct=0):
+    """Create a clean movie card without HTML in content"""
+    # Format movie metadata
+    year = ""
+    runtime = ""
+    director_info = ""
+    cast_info = ""
+    
+    if 'release_date' in movie and pd.notna(movie['release_date']):
+        try:
+            year = movie['release_date'][:4]
+        except:
+            year = ""
+    
+    if 'runtime' in movie and pd.notna(movie['runtime']) and movie['runtime'] > 0:
+        hours = int(movie['runtime']) // 60
+        minutes = int(movie['runtime']) % 60
+        if hours > 0:
+            runtime = f"{hours}h {minutes}min"
+        else:
+            runtime = f"{minutes}min"
+    
+    if 'director' in movie and pd.notna(movie['director']) and movie['director']:
+        director_clean = clean_text(movie['director'])
+        director_info = f"Director: {director_clean}"
+    
+    if 'cast' in movie and pd.notna(movie['cast']) and movie['cast']:
+        cast_clean = clean_text(movie['cast'])
+        cast_list = cast_clean.split(' | ')[:3]
+        cast_info = f"Starring: {', '.join(cast_list)}"
+    
+    # Clean plot overview
+    full_plot = clean_text(movie['overview'])
+    
+    # Create the card HTML
+    match_score_html = ""
+    if show_match_score:
+        match_score_html = f'<div class="match-score">{similarity_score_pct:.0f}% Match</div>'
+    
+    return f"""
+    <div class="movie-card">
+        {match_score_html}
+        <h3 class="movie-title">{movie['title']}</h3>
+        <div style="margin-bottom: 1rem;">
+            <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
+            <span class="movie-genre">{movie['genres']}</span>
+        </div>
+        <div class="movie-meta">
+            {f"<span>📅 {year}</span>" if year else ""}
+            {f"<span>⏱️ {runtime}</span>" if runtime else ""}
+            {f"<span>🎬 {director_clean}</span>" if 'director' in movie and pd.notna(movie['director']) and movie['director'] else ""}
+        </div>
+        <div class="movie-description"><strong>Plot:</strong> {full_plot}</div>
+        {f"<div style='margin-top: 1rem; color: #8b949e; font-size: 0.9rem;'>{cast_info}</div>" if cast_info else ""}
+    </div>
+    """
+
 def main():
+    load_styles()
+    
     # Main Header
     st.markdown("""
     <div class="main-header">
@@ -1039,9 +451,9 @@ def main():
                     # Get actor info if possible
                     person_info = get_person_info(search_query, "actor")
                     if person_info and person_info.get('biography'):
-                        bio = person_info['biography']
-                        if len(bio) > 200:
-                            bio = bio[:200] + "..."
+                        bio = clean_text(person_info['biography'])
+                        if len(bio) > 150:
+                            bio = bio[:150] + "..."
                         
                         st.markdown(f"""
                         <div class="actor-bio">
@@ -1056,9 +468,9 @@ def main():
                     
                     person_info = get_person_info(search_query, "director")
                     if person_info and person_info.get('biography'):
-                        bio = person_info['biography']
-                        if len(bio) > 200:
-                            bio = bio[:200] + "..."
+                        bio = clean_text(person_info['biography'])
+                        if len(bio) > 150:
+                            bio = bio[:150] + "..."
                         
                         st.markdown(f"""
                         <div class="actor-bio">
@@ -1077,9 +489,11 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                 
-                # Create movie selection options
+                # Create movie selection options - show MORE results for actors/directors
+                result_limit = 30 if search_type in ["actor", "director"] else 15
                 result_options = []
-                for _, movie in search_results.head(20).iterrows():
+                
+                for _, movie in search_results.head(result_limit).iterrows():
                     year = ""
                     if 'release_date' in movie and pd.notna(movie['release_date']):
                         try:
@@ -1088,17 +502,7 @@ def main():
                             year = ""
                     
                     rating_info = f" - ⭐{movie['vote_average']:.1f}"
-                    
-                    # Add context based on search type
-                    context_info = ""
-                    if search_type == "actor" and 'cast' in movie:
-                        context_info = f" - {movie['genres'][:25]}..."
-                    elif search_type == "director" and 'director' in movie:
-                        context_info = f" - {movie['genres'][:25]}..."
-                    elif search_type == "genre":
-                        context_info = f" - {movie['genres']}"
-                    
-                    display_text = f"{movie['title']}{year}{rating_info}{context_info}"
+                    display_text = f"{movie['title']}{year}{rating_info}"
                     result_options.append(display_text)
                 
                 selected_display = st.selectbox(
@@ -1158,8 +562,7 @@ def main():
             poster_url = get_movie_poster(selected_movie['title'], selected_movie.get('id'))
             
             # Get complete overview - clean any HTML tags
-            full_overview = selected_movie['overview']
-            full_overview = re.sub(r'<[^>]+>', '', str(full_overview))  # Remove HTML tags
+            full_overview = clean_text(selected_movie['overview'])
             
             # Format runtime
             runtime_info = ""
@@ -1182,12 +585,12 @@ def main():
             # Clean cast and director info
             cast_display = ""
             if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast']:
-                cast_clean = re.sub(r'<[^>]+>', '', str(selected_movie['cast']))
+                cast_clean = clean_text(selected_movie['cast'])
                 cast_display = f"**Cast:** {cast_clean}"
             
             director_display = ""
             if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director']:
-                director_clean = re.sub(r'<[^>]+>', '', str(selected_movie['director']))
+                director_clean = clean_text(selected_movie['director'])
                 director_display = f"🎬 {director_clean}"
             
             st.markdown(f"""
@@ -1222,54 +625,8 @@ def main():
             if len(recommendations) > 0:
                 for idx, (_, movie) in enumerate(recommendations.iterrows()):
                     similarity_score_pct = movie.get('similarity_score', 0) * 100
-                    
-                    # Format movie metadata
-                    year = ""
-                    runtime = ""
-                    director_info = ""
-                    cast_info = ""
-                    
-                    if 'release_date' in movie and pd.notna(movie['release_date']):
-                        try:
-                            year = movie['release_date'][:4]
-                        except:
-                            year = ""
-                    
-                    if 'runtime' in movie and pd.notna(movie['runtime']) and movie['runtime'] > 0:
-                        hours = int(movie['runtime']) // 60
-                        minutes = int(movie['runtime']) % 60
-                        if hours > 0:
-                            runtime = f"{hours}h {minutes}min"
-                        else:
-                            runtime = f"{minutes}min"
-                    
-                    if 'director' in movie and pd.notna(movie['director']) and movie['director']:
-                        director_info = f"🎬 {movie['director']}"
-                    
-                    if 'cast' in movie and pd.notna(movie['cast']) and movie['cast']:
-                        cast_list = movie['cast'].split(' | ')[:3]
-                        cast_info = f"👥 {', '.join(cast_list)}"
-                    
-                    # Complete plot overview - clean HTML tags
-                    full_plot = re.sub(r'<[^>]+>', '', str(movie['overview']))
-                    
-                    st.markdown(f"""
-                    <div class="movie-card">
-                        <div class="match-score">{similarity_score_pct:.0f}% Match</div>
-                        <h3 class="movie-title">{movie['title']}</h3>
-                        <div style="margin-bottom: 1rem;">
-                            <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
-                            <span class="movie-genre">{movie['genres']}</span>
-                        </div>
-                        <div class="movie-meta">
-                            {f"<span>📅 {year}</span>" if year else ""}
-                            {f"<span>⏱️ {runtime}</span>" if runtime else ""}
-                            {f"<span>{director_info}</span>" if director_info else ""}
-                        </div>
-                        <p class="movie-description"><strong>Plot:</strong> {full_plot}</p>
-                        {f"<div style='margin-top: 0.8rem; color: #8b949e; font-size: 0.85rem;'>{cast_info}</div>" if cast_info else ""}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    card_html = create_movie_card(movie, True, similarity_score_pct)
+                    st.markdown(card_html, unsafe_allow_html=True)
             else:
                 st.warning("No recommendations found for this movie. Try selecting a different movie.")
         else:
@@ -1278,30 +635,8 @@ def main():
             featured = movies_df.nlargest(6, 'vote_average')
             
             for _, movie in featured.iterrows():
-                year = ""
-                if 'release_date' in movie and pd.notna(movie['release_date']):
-                    try:
-                        year = f" ({movie['release_date'][:4]})"
-                    except:
-                        year = ""
-                
-                director_info = ""
-                if 'director' in movie and pd.notna(movie['director']) and movie['director']:
-                    director_info = f"🎬 {movie['director']}"
-                
-                full_plot = re.sub(r'<[^>]+>', '', str(movie['overview']))
-                
-                st.markdown(f"""
-                <div class="movie-card">
-                    <h3 class="movie-title">{movie['title']}{year}</h3>
-                    <div style="margin-bottom: 1rem;">
-                        <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
-                        <span class="movie-genre">{movie['genres']}</span>
-                    </div>
-                    {f"<div style='margin-bottom: 0.8rem; color: #8b949e;'>{director_info}</div>" if director_info else ""}
-                    <p class="movie-description">{full_plot}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                card_html = create_movie_card(movie, False, 0)
+                st.markdown(card_html, unsafe_allow_html=True)
 
     # Footer
     st.markdown("""
@@ -1312,4 +647,648 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()
+    main()import streamlit as st
+import pandas as pd
+import requests
+import json
+import gzip
+import io
+import re
+from difflib import SequenceMatcher
+try:
+    from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    try:
+        import sklearn
+        from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+        SKLEARN_AVAILABLE = True
+    except ImportError:
+        SKLEARN_AVAILABLE = False
+        import random
+        def simple_recommend(movies_df, selected_title, n_recommendations=5):
+            """Simple genre-based recommendation fallback"""
+            try:
+                selected_movie = movies_df[movies_df['title'] == selected_title].iloc[0]
+                selected_genres = selected_movie['genres'].lower()
+                
+                similar_movies = movies_df[
+                    (movies_df['title'] != selected_title) & 
+                    (movies_df['genres'].str.lower().str.contains('|'.join(selected_genres.split()[:2]), na=False))
+                ].copy()
+                
+                if len(similar_movies) < n_recommendations:
+                    additional = movies_df[
+                        (movies_df['title'] != selected_title) & 
+                        (~movies_df['title'].isin(similar_movies['title']))
+                    ].nlargest(n_recommendations - len(similar_movies), 'vote_average')
+                    similar_movies = pd.concat([similar_movies, additional])
+                
+                result = similar_movies.head(n_recommendations).copy()
+                result['similarity_score'] = [0.8 - i*0.1 for i in range(len(result))]
+                return result
+            except:
+                return pd.DataFrame()
+
+# Page config
+st.set_page_config(
+    page_title="Cinema Vault - Movie Recommender",
+    page_icon="🎬",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+def load_styles():
+    """Load CSS styles"""
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    .stApp {
+        background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #21262d 100%);
+        font-family: 'Inter', sans-serif;
+    }
+
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    .main-header {
+        background: rgba(33, 38, 45, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .main-title {
+        font-size: 3.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 50%, #0969da 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 0 30px rgba(88, 166, 255, 0.3);
+    }
+
+    .main-subtitle {
+        font-size: 1.2rem;
+        color: #8b949e;
+        font-weight: 300;
+        margin-bottom: 2rem;
+    }
+
+    .stats-container {
+        display: flex;
+        justify-content: center;
+        gap: 3rem;
+        margin-top: 2rem;
+    }
+
+    .stat-item {
+        text-align: center;
+    }
+
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #58a6ff;
+        display: block;
+        text-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
+    }
+
+    .stat-label {
+        font-size: 1rem;
+        color: #8b949e;
+        font-weight: 400;
+        margin-top: 0.5rem;
+    }
+
+    .hero-section {
+        background: rgba(33, 38, 45, 0.8);
+        border: 1px solid rgba(48, 54, 61, 0.6);
+        border-radius: 20px;
+        padding: 2.5rem;
+        margin-bottom: 3rem;
+        backdrop-filter: blur(10px);
+    }
+
+    .hero-title {
+        font-size: 3rem;
+        font-weight: 600;
+        color: #f0f6fc;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+
+    .hero-gradient-text {
+        background: linear-gradient(135deg, #39d353 0%, #26a641 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .hero-description {
+        font-size: 1.1rem;
+        color: #8b949e;
+        text-align: center;
+        margin-bottom: 2rem;
+        line-height: 1.6;
+    }
+
+    .search-section {
+        background: rgba(33, 38, 45, 0.6);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .selected-movie-info {
+        background: rgba(33, 38, 45, 0.9);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        display: flex;
+        gap: 2rem;
+        align-items: flex-start;
+        min-height: 450px;
+    }
+
+    .movie-poster {
+        flex-shrink: 0;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .movie-info-content {
+        flex: 1;
+        min-height: 400px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .movie-info-title {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #f0f6fc;
+        margin-bottom: 1rem;
+    }
+
+    .movie-info-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+    }
+
+    .movie-info-plot {
+        color: #c9d1d9;
+        line-height: 1.7;
+        font-size: 1rem;
+        margin-bottom: 1.5rem;
+        padding: 1.5rem;
+        background: rgba(13, 17, 23, 0.6);
+        border-radius: 8px;
+        border-left: 3px solid #58a6ff;
+        flex: 1;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    .movie-card {
+        background: rgba(33, 38, 45, 0.8);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+        min-height: 250px;
+    }
+
+    .movie-card:hover {
+        border-color: rgba(88, 166, 255, 0.6);
+        box-shadow: 0 8px 25px rgba(88, 166, 255, 0.15);
+        transform: translateY(-2px);
+    }
+
+    .movie-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #58a6ff, #1f6feb);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .movie-card:hover::before {
+        opacity: 1;
+    }
+
+    .movie-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #f0f6fc;
+        margin-bottom: 0.8rem;
+    }
+
+    .movie-rating {
+        display: inline-block;
+        background: linear-gradient(135deg, #ffd700, #ffb700);
+        color: #000;
+        padding: 0.4rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-right: 1rem;
+    }
+
+    .movie-genre {
+        color: #58a6ff;
+        font-size: 1rem;
+        font-weight: 500;
+    }
+
+    .movie-description {
+        color: #c9d1d9;
+        font-size: 1rem;
+        line-height: 1.7;
+        margin-top: 1.5rem;
+        padding: 1.5rem;
+        background: rgba(13, 17, 23, 0.6);
+        border-radius: 8px;
+        border-left: 3px solid #39d353;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        max-width: 100%;
+    }
+
+    .movie-meta {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+        font-size: 0.95rem;
+        color: #8b949e;
+        flex-wrap: wrap;
+    }
+
+    .match-score {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: linear-gradient(135deg, #39d353, #26a641);
+        color: #fff;
+        padding: 0.4rem 0.8rem;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .section-header {
+        font-size: 2rem;
+        font-weight: 600;
+        color: #f0f6fc;
+        margin: 2rem 0 1.5rem 0;
+        text-align: center;
+    }
+
+    .search-results-header {
+        color: #58a6ff;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 1rem 0 0.5rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+    }
+
+    .no-results {
+        background: rgba(139, 148, 158, 0.1);
+        border: 1px solid rgba(139, 148, 158, 0.3);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #8b949e;
+        text-align: center;
+    }
+
+    .actor-bio {
+        background: rgba(33, 38, 45, 0.6);
+        border: 1px solid rgba(48, 54, 61, 0.6);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        color: #c9d1d9;
+    }
+
+    .genre-description {
+        background: rgba(33, 38, 45, 0.6);
+        border: 1px solid rgba(48, 54, 61, 0.6);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        color: #c9d1d9;
+    }
+
+    @media (max-width: 768px) {
+        .main-title {
+            font-size: 2.5rem;
+        }
+        
+        .hero-title {
+            font-size: 2rem;
+        }
+        
+        .stats-container {
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .selected-movie-info {
+            flex-direction: column;
+        }
+        
+        .movie-poster {
+            align-self: center;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# TMDB API key from Streamlit secrets
+try:
+    TMDB_API_KEY = st.secrets["TMDB_API_KEY"]
+except:
+    TMDB_API_KEY = None
+
+# GitHub repository configuration
+GITHUB_REPO_URL = "https://raw.githubusercontent.com/vengeanceI/movie-recommender/main/"
+MOVIES_FILE = "tmdb_5000_movies.csv"
+CREDITS_FILE = "tmdb_credits_maximum.csv"
+
+@st.cache_data
+def load_data_from_github():
+    """Load movie and credits data from GitHub repository"""
+    movies_df = None
+    credits_df = None
+    
+    try:
+        movies_url = f"{GITHUB_REPO_URL}{MOVIES_FILE}"
+        movies_response = requests.get(movies_url, timeout=30)
+        movies_response.raise_for_status()
+        
+        movies_df = pd.read_csv(io.StringIO(movies_response.text))
+        
+        credits_url = f"{GITHUB_REPO_URL}{CREDITS_FILE}"
+        credits_response = requests.get(credits_url, timeout=30)
+        credits_response.raise_for_status()
+        
+        credits_df = pd.read_csv(io.StringIO(credits_response.text))
+        
+        if credits_df is not None:
+            if 'movie_id' in credits_df.columns:
+                movies_df = movies_df.merge(credits_df, left_on='id', right_on='movie_id', how='left')
+            else:
+                movies_df = movies_df.merge(credits_df, on='id', how='left')
+        
+        movies_df = process_movie_data(movies_df)
+        return movies_df
+        
+    except Exception as e:
+        st.error(f"Error loading data from GitHub: {e}")
+        return create_fallback_data()
+
+@st.cache_data
+def load_movie_data():
+    """Main data loading function"""
+    try:
+        return load_data_from_github()
+    except Exception as e:
+        return create_fallback_data()
+
+def clean_text(text):
+    """Clean text from HTML tags and extra whitespace"""
+    if pd.isna(text) or text == '':
+        return ''
+    text = str(text)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def process_movie_data(movies_df):
+    """Process and clean movie data with enhanced credits handling"""
+    try:
+        essential_cols = ['id', 'title', 'overview', 'genres', 'vote_average', 'vote_count', 
+                         'popularity', 'release_date', 'runtime']
+        
+        optional_cols = ['cast', 'crew', 'keywords']
+        available_cols = essential_cols + [col for col in optional_cols if col in movies_df.columns]
+        
+        movies_df = movies_df[available_cols].copy()
+        movies_df = movies_df.dropna(subset=['title', 'overview'])
+        movies_df = movies_df[movies_df['overview'].str.len() > 10]
+        
+        def extract_genre_names(text):
+            try:
+                if pd.isna(text) or text == '':
+                    return 'Unknown'
+                data = json.loads(text.replace("'", '"'))
+                if isinstance(data, list):
+                    return ' '.join([item['name'] for item in data[:3] if 'name' in item])
+                return clean_text(text)
+            except:
+                return clean_text(text) if pd.notna(text) else 'Unknown'
+        
+        movies_df['genres'] = movies_df['genres'].fillna('[]').apply(extract_genre_names)
+        
+        if 'keywords' in movies_df.columns:
+            def extract_keywords(text):
+                try:
+                    if pd.isna(text) or text == '':
+                        return ''
+                    data = json.loads(text.replace("'", '"'))
+                    if isinstance(data, list):
+                        return ' '.join([item['name'] for item in data[:5] if 'name' in item])
+                    return ''
+                except:
+                    return ''
+            movies_df['keywords'] = movies_df['keywords'].fillna('[]').apply(extract_keywords)
+        
+        if 'cast' in movies_df.columns:
+            def extract_cast_names(text):
+                try:
+                    if pd.isna(text) or text == '':
+                        return ''
+                    data = json.loads(text.replace("'", '"'))
+                    if isinstance(data, list):
+                        cast_names = [actor['name'] for actor in data[:10] if 'name' in actor]
+                        return ' | '.join(cast_names)
+                    return clean_text(text)
+                except:
+                    return clean_text(text) if pd.notna(text) else ''
+            
+            movies_df['cast'] = movies_df['cast'].fillna('[]').apply(extract_cast_names)
+            movies_df['cast_searchable'] = movies_df['cast'].str.lower().str.replace('|', ' ')
+        
+        if 'crew' in movies_df.columns:
+            def extract_director(text):
+                try:
+                    if pd.isna(text) or text == '':
+                        return ''
+                    data = json.loads(text.replace("'", '"'))
+                    if isinstance(data, list):
+                        directors = []
+                        for person in data:
+                            if person.get('job') == 'Director':
+                                directors.append(person['name'])
+                        return ' | '.join(directors[:3])
+                    return ''
+                except:
+                    return ''
+            
+            movies_df['director'] = movies_df['crew'].apply(extract_director)
+            movies_df['director_searchable'] = movies_df['director'].str.lower().str.replace('|', ' ')
+        
+        # Clean overview text
+        movies_df['overview'] = movies_df['overview'].apply(clean_text)
+        
+        # Create combined features for similarity calculation
+        feature_components = [
+            movies_df['overview'].fillna(''),
+            movies_df['genres'].fillna(''),
+        ]
+        
+        if 'cast' in movies_df.columns:
+            cast_clean = movies_df['cast'].fillna('').str.replace('|', ' ')
+            feature_components.append(cast_clean)
+        
+        if 'director' in movies_df.columns:
+            feature_components.append(movies_df['director'].fillna(''))
+        
+        if 'keywords' in movies_df.columns:
+            feature_components.append(movies_df['keywords'].fillna(''))
+        
+        movies_df['combined_features'] = ''
+        for component in feature_components:
+            movies_df['combined_features'] += ' ' + component.astype(str)
+        
+        movies_df['combined_features'] = movies_df['combined_features'].str.strip()
+        
+        return movies_df.reset_index(drop=True)
+        
+    except Exception as e:
+        st.error(f"Error processing movie data: {e}")
+        return movies_df
+
+def create_fallback_data():
+    """Create comprehensive sample data if GitHub files are unavailable"""
+    sample_data = [
+        {"id": 19995, "title": "Avatar", "genres": "Action Adventure Fantasy", "vote_average": 7.2, "overview": "In the 22nd century, a paraplegic Marine is dispatched to the moon Pandora on a unique mission, but becomes torn between following orders and protecting an alien civilization. Avatar takes us to a spectacular world beyond imagination, where a reluctant hero embarks on a journey of redemption and discovery as he leads a heroic battle to save a civilization.", "cast": "Sam Worthington | Zoe Saldana | Sigourney Weaver | Stephen Lang | Michelle Rodriguez", "director": "James Cameron", "release_date": "2009-12-18", "runtime": 162, "vote_count": 11800, "popularity": 150.437},
+        {"id": 285, "title": "Pirates of the Caribbean: The Curse of the Black Pearl", "genres": "Adventure Fantasy Action", "vote_average": 7.8, "overview": "Blacksmith Will Turner teams up with eccentric pirate Captain Jack Sparrow to save his love, the governor's daughter, from Jack's former pirate allies, who are now undead. This swashbuckling tale of adventure on the high seas brings supernatural elements and unforgettable characters together in an epic story of love, betrayal, and redemption.", "cast": "Johnny Depp | Orlando Bloom | Keira Knightley | Geoffrey Rush | Jack Davenport", "director": "Gore Verbinski", "release_date": "2003-07-09", "runtime": 143, "vote_count": 8945, "popularity": 123.456},
+        {"id": 550, "title": "Fight Club", "genres": "Drama Thriller", "vote_average": 8.4, "overview": "A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy. Their concept catches on, with underground fight clubs forming in every town, until an eccentric gets in the way and ignites an out-of-control spiral toward oblivion.", "cast": "Brad Pitt | Edward Norton | Helena Bonham Carter | Meat Loaf | Jared Leto", "director": "David Fincher", "release_date": "1999-10-15", "runtime": 139, "vote_count": 15420, "popularity": 89.234},
+        {"id": 155, "title": "The Dark Knight", "genres": "Action Crime Drama", "vote_average": 8.5, "overview": "Batman raises the stakes in his war on crime. With the help of Lt. Jim Gordon and District Attorney Harvey Dent, Batman sets out to dismantle the remaining criminal organizations that plague the streets. The partnership proves to be effective, but they soon find themselves prey to a reign of chaos unleashed by a rising criminal mastermind known to the terrified citizens of Gotham as the Joker.", "cast": "Christian Bale | Heath Ledger | Aaron Eckhart | Michael Caine | Maggie Gyllenhaal", "director": "Christopher Nolan", "release_date": "2008-07-18", "runtime": 152, "vote_count": 18500, "popularity": 140.789},
+        {"id": 157336, "title": "Interstellar", "genres": "Adventure Drama Science Fiction", "vote_average": 8.1, "overview": "The adventures of a group of explorers who make use of a newly discovered wormhole to surpass the limitations on human space travel and conquer the vast distances involved in an interstellar voyage. In Earth's future, a global crop blight and second Dust Bowl are slowly rendering the planet uninhabitable.", "cast": "Matthew McConaughey | Anne Hathaway | Jessica Chastain | Michael Caine | Matt Damon", "director": "Christopher Nolan", "release_date": "2014-11-07", "runtime": 169, "vote_count": 16789, "popularity": 132.567},
+        {"id": 122, "title": "The Lord of the Rings: The Return of the King", "genres": "Adventure Drama Action", "vote_average": 8.3, "overview": "Aragorn is revealed as the heir to the ancient kings as he, Gandalf and the other members of the broken fellowship struggle to save Gondor from Sauron's forces. Meanwhile, Frodo and Sam bring the ring closer to the heart of Mordor, the dark lord's realm.", "cast": "Elijah Wood | Ian McKellen | Viggo Mortensen | Sean Astin | Orlando Bloom", "director": "Peter Jackson", "release_date": "2003-12-17", "runtime": 201, "vote_count": 14567, "popularity": 98.345},
+        {"id": 238, "title": "The Godfather", "genres": "Drama Crime", "vote_average": 8.7, "overview": "Spanning the years 1945 to 1955, a chronicle of the fictional Italian-American Corleone crime family. When organized crime family patriarch, Vito Corleone barely survives an attempt on his life, his youngest son, Michael steps in to take care of the would-be killers, launching a campaign of bloody revenge.", "cast": "Marlon Brando | Al Pacino | James Caan | Diane Keaton | Robert Duvall", "director": "Francis Ford Coppola", "release_date": "1972-03-24", "runtime": 175, "vote_count": 12890, "popularity": 87.654},
+        {"id": 13, "title": "Forrest Gump", "genres": "Comedy Drama Romance", "vote_average": 8.2, "overview": "A man with a low IQ has accomplished great things in his life and been present during significant historic events—in each case, far exceeding what anyone imagined he could do. But despite all he has achieved, his one true love eludes him.", "cast": "Tom Hanks | Robin Wright | Gary Sinise | Sally Field | Mykelti Williamson", "director": "Robert Zemeckis", "release_date": "1994-07-06", "runtime": 142, "vote_count": 13456, "popularity": 105.432},
+        {"id": 769, "title": "Goodfellas", "genres": "Drama Crime", "vote_average": 8.2, "overview": "The true story of Henry Hill, a half-Irish, half-Sicilian Brooklyn kid who is adopted by neighbourhood gangsters at an early age and climbs the ranks of a Mafia family under the guidance of Jimmy Conway.", "cast": "Robert De Niro | Ray Liotta | Joe Pesci | Lorraine Bracco | Paul Sorvino", "director": "Martin Scorsese", "release_date": "1990-09-21", "runtime": 146, "vote_count": 9876, "popularity": 76.543},
+        {"id": 278, "title": "The Shawshank Redemption", "genres": "Drama", "vote_average": 8.7, "overview": "Framed in the 1940s for the double murder of his wife and her lover, upstanding banker Andy Dufresne begins a new life at the Shawshank prison, where he puts his accounting skills to work for an amoral warden. During his long stretch in prison, Dufresne comes to be admired by the other inmates -- including an older prisoner named Red -- for his integrity and unquenchable sense of hope.", "cast": "Tim Robbins | Morgan Freeman | Bob Gunton | William Sadler | Clancy Brown", "director": "Frank Darabont", "release_date": "1994-09-23", "runtime": 142, "vote_count": 17890, "popularity": 94.123}
+    ]
+    
+    df = pd.DataFrame(sample_data)
+    
+    # Add searchable fields
+    df['cast_searchable'] = df['cast'].str.lower().str.replace('|', ' ')
+    df['director_searchable'] = df['director'].str.lower().str.replace('|', ' ')
+    
+    # Create combined features
+    df['combined_features'] = df['overview'] + ' ' + df['genres'] + ' ' + df['cast'] + ' ' + df['director']
+    df['keywords'] = ''
+    
+    return df
+
+@st.cache_data
+def create_similarity_matrix(movies_df):
+    """Create enhanced similarity matrix for recommendations"""
+    if not SKLEARN_AVAILABLE:
+        return None
+        
+    try:
+        # Use TfidfVectorizer for better results
+        tfidf = TfidfVectorizer(
+            max_features=10000,
+            stop_words='english',
+            lowercase=True,
+            ngram_range=(1, 3),
+            min_df=1,
+            max_df=0.8
+        )
+        
+        vectors = tfidf.fit_transform(movies_df['combined_features']).toarray()
+        similarity = cosine_similarity(vectors)
+        
+        return similarity
+        
+    except Exception as e:
+        st.error(f"Error creating similarity matrix: {e}")
+        return None
+
+def get_movie_poster(movie_title, tmdb_id=None):
+    """Get movie poster from TMDB API with fallback"""
+    try:
+        if not TMDB_API_KEY:
+            return "https://via.placeholder.com/300x450/1f1f1f/ffffff?text=🎬+No+API+Key"
+            
+        if tmdb_id:
+            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
+        else:
+            url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_title}"
+        
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        
+        poster_path = None
+        if tmdb_id and 'poster_path' in data:
+            poster_path = data['poster_path']
+        elif 'results' in data and data['results'] and data['results'][0].get('poster_path'):
+            poster_path = data['results'][0]['poster_path']
+        
+        if poster_path:
+            return f"https://image.tmdb.org/t/p/w300{poster_path}"
+            
+    except:
+        pass
+    
+    return "https://via.placeholder.com/300x450/1f1f1f/ffffff?text=🎬+No+Poster"
+
+def similarity_score(a, b):
+    """Calculate string similarity"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+def advanced_search(movies_df, query, search_type="auto"):
+    """Enhanced search function with comprehensive results"""
+    if not query or len(query.strip()) < 2:
+        return pd.DataFrame(), "auto", ""
+    
+    query = query.lower().strip()
+    results = []
+    
+    # Detect primary search type for display purposes
+    if search_type == "auto":
+        common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
+                        'johnny depp', 'morgan freeman', 'samuel l jackson', 'matt damon', 'christian bale',
+                        'scarlett johansson', 'jennifer lawrence', 'angelina jolie', 'meryl streep',
+                        'denzel washington', 'tom cruise', 'robert de n
