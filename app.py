@@ -3,12 +3,12 @@ common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'r
                         'scarlett johansson', 'jennifer lawrence', 'angelina jolie', 'meryl streep',
                         'denzel washington', 'tom cruise', 'robert de niro', 'al pacino', 'heath ledger']
         
-common_directors = ['christopher nolan', 'martin scorsese', 'quentin tarantino', 'steven spielberg',
+        common_directors = ['christopher nolan', 'martin scorsese', 'quentin tarantino', 'steven spielberg',
                            'james cameron', 'ridley scott', 'david fincher', 'tim burton', 'peter jackson',
                            'francis ford coppola', 'stanley kubrick', 'alfred hitchcock', 'george lucas',
                            'jj abrams', 'denis villeneuve', 'christopher mcquarrie', 'guy ritchie']
         
-common_genres = ['action', 'adventure', 'comedy', 'drama', 'horror', 'thriller', 'romance',
+        common_genres = ['action', 'adventure', 'comedy', 'drama', 'horror', 'thriller', 'romance',
                         'science fiction', 'sci-fi', 'fantasy', 'animation', 'crime', 'mystery', 'western',
                         'war', 'documentary', 'biography', 'history', 'music', 'family']
         
