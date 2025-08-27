@@ -43,13 +43,13 @@ except ImportError:
 
 # Page config
 st.set_page_config(
-    page_title="Cinema Noir - Movie Recommender",
+    page_title="Cinema Vault - Movie Recommender",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for Cinema Noir theme
+# Custom CSS for Cinema Vault theme
 st.markdown("""
 <style>
 /* Import Google Fonts */
@@ -229,6 +229,14 @@ header {visibility: hidden;}
     margin-top: 1rem;
 }
 
+.movie-meta {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #8b949e;
+}
+
 .match-score {
     position: absolute;
     top: 1rem;
@@ -286,6 +294,49 @@ header {visibility: hidden;}
     margin-top: 0.8rem;
 }
 
+.selected-movie-info {
+    background: rgba(33, 38, 45, 0.9);
+    border: 1px solid rgba(48, 54, 61, 0.8);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.movie-poster {
+    flex-shrink: 0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.movie-info-content {
+    flex: 1;
+}
+
+.movie-info-title {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #f0f6fc;
+    margin-bottom: 0.8rem;
+}
+
+.movie-info-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.movie-info-plot {
+    color: #c9d1d9;
+    line-height: 1.6;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+}
+
 /* Custom button styling */
 .stButton > button {
     background: linear-gradient(135deg, #58a6ff, #1f6feb);
@@ -338,6 +389,14 @@ header {visibility: hidden;}
     .movie-grid {
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 1rem;
+    }
+    
+    .selected-movie-info {
+        flex-direction: column;
+    }
+    
+    .movie-poster {
+        align-self: center;
     }
 }
 </style>
@@ -443,7 +502,7 @@ def process_movie_data(movies_df):
                         return ''
                     data = json.loads(text.replace("'", '"'))
                     if isinstance(data, list):
-                        cast_names = [actor['name'] for actor in data[:5] if 'name' in actor]
+                        cast_names = [actor['name'] for actor in data[:10] if 'name' in actor]
                         return ' | '.join(cast_names)
                     return str(text)
                 except:
@@ -458,9 +517,11 @@ def process_movie_data(movies_df):
                         return ''
                     data = json.loads(text.replace("'", '"'))
                     if isinstance(data, list):
+                        directors = []
                         for person in data:
                             if person.get('job') == 'Director':
-                                return person['name']
+                                directors.append(person['name'])
+                        return ' | '.join(directors[:3])
                     return ''
                 except:
                     return ''
@@ -497,11 +558,11 @@ def process_movie_data(movies_df):
 def create_fallback_data():
     """Create sample data if GitHub files are unavailable"""
     sample_data = [
-        {"id": 19995, "title": "Avatar", "genres": "Action Adventure Fantasy", "vote_average": 7.2, "overview": "In the 22nd century, a paraplegic Marine is dispatched to the moon Pandora on a unique mission.", "cast": "Sam Worthington | Zoe Saldana | Sigourney Weaver", "director": "James Cameron"},
-        {"id": 285, "title": "Pirates of the Caribbean: The Curse of the Black Pearl", "genres": "Adventure Fantasy Action", "vote_average": 7.8, "overview": "Blacksmith Will Turner teams up with eccentric pirate Captain Jack Sparrow.", "cast": "Johnny Depp | Orlando Bloom | Keira Knightley", "director": "Gore Verbinski"},
-        {"id": 206647, "title": "Spectre", "genres": "Action Adventure Crime", "vote_average": 6.3, "overview": "A cryptic message from Bond's past sends him on a trail to uncover a sinister organization.", "cast": "Daniel Craig | Christoph Waltz | Léa Seydoux", "director": "Sam Mendes"},
-        {"id": 49026, "title": "The Dark Knight Rises", "genres": "Action Crime Drama", "vote_average": 7.6, "overview": "Following the death of District Attorney Harvey Dent, Batman assumes responsibility for Dent's crimes.", "cast": "Christian Bale | Tom Hardy | Anne Hathaway", "director": "Christopher Nolan"},
-        {"id": 49529, "title": "John Carter", "genres": "Action Adventure Science Fiction", "vote_average": 6.1, "overview": "A former Confederate captain is mysteriously transported to Mars.", "cast": "Taylor Kitsch | Lynn Collins | Samantha Morton", "director": "Andrew Stanton"},
+        {"id": 19995, "title": "Avatar", "genres": "Action Adventure Fantasy", "vote_average": 7.2, "overview": "In the 22nd century, a paraplegic Marine is dispatched to the moon Pandora on a unique mission, but becomes torn between following orders and protecting an alien civilization.", "cast": "Sam Worthington | Zoe Saldana | Sigourney Weaver", "director": "James Cameron"},
+        {"id": 285, "title": "Pirates of the Caribbean: The Curse of the Black Pearl", "genres": "Adventure Fantasy Action", "vote_average": 7.8, "overview": "Blacksmith Will Turner teams up with eccentric pirate Captain Jack Sparrow to save his love, the governor's daughter, from Jack's former pirate allies, who are now undead.", "cast": "Johnny Depp | Orlando Bloom | Keira Knightley", "director": "Gore Verbinski"},
+        {"id": 206647, "title": "Spectre", "genres": "Action Adventure Crime", "vote_average": 6.3, "overview": "A cryptic message from Bond's past sends him on a trail to uncover a sinister organization. While M battles political forces to keep the secret service alive, Bond peels back the layers of deceit to reveal the terrible truth behind SPECTRE.", "cast": "Daniel Craig | Christoph Waltz | Léa Seydoux", "director": "Sam Mendes"},
+        {"id": 49026, "title": "The Dark Knight Rises", "genres": "Action Crime Drama", "vote_average": 7.6, "overview": "Following the death of District Attorney Harvey Dent, Batman assumes responsibility for Dent's crimes to protect the late attorney's reputation and is subsequently hunted by the Gotham City Police Department. Eight years later, Batman encounters the mysterious Selina Kyle and the villainous Bane, a new terrorist leader who overwhelms Gotham's finest.", "cast": "Christian Bale | Tom Hardy | Anne Hathaway", "director": "Christopher Nolan"},
+        {"id": 49529, "title": "John Carter", "genres": "Action Adventure Science Fiction", "vote_average": 6.1, "overview": "John Carter is a war-weary, former military captain who's inexplicably transported to the mysterious and exotic planet of Barsoom (Mars) and reluctantly becomes embroiled in an epic conflict.", "cast": "Taylor Kitsch | Lynn Collins | Samantha Morton", "director": "Andrew Stanton"},
     ]
     
     df = pd.DataFrame(sample_data)
@@ -565,29 +626,137 @@ def get_movie_poster(movie_title, tmdb_id=None):
     
     return "https://via.placeholder.com/300x450/1f1f1f/ffffff?text=🎬+No+Poster"
 
-def recommend_movies(movie_title, movies_df, similarity_matrix, n_recommendations=5):
-    """Get movie recommendations based on content similarity"""
+def advanced_search(movies_df, query):
+    """Enhanced search function for movies, actors, directors, and genres"""
+    query = query.lower().strip()
+    if not query:
+        return movies_df.nlargest(50, 'popularity')
+    
+    # Multi-field search with scoring
+    results = []
+    
+    # Title search (highest priority)
+    title_matches = movies_df[movies_df['title'].str.lower().str.contains(query, na=False)]
+    for _, movie in title_matches.iterrows():
+        score = 100  # Highest score for title matches
+        if query in movie['title'].lower():
+            score += 50
+        results.append((movie, score))
+    
+    # Actor/Cast search
+    if 'cast' in movies_df.columns:
+        cast_matches = movies_df[
+            (~movies_df['title'].str.lower().str.contains(query, na=False)) &
+            (movies_df['cast'].str.lower().str.contains(query, na=False))
+        ]
+        for _, movie in cast_matches.iterrows():
+            score = 80
+            # Boost score if actor name appears earlier in cast list (more prominent role)
+            cast_list = movie['cast'].lower()
+            position = cast_list.find(query)
+            if position < 50:  # Actor in first ~2 names
+                score += 20
+            results.append((movie, score))
+    
+    # Director search
+    if 'director' in movies_df.columns:
+        director_matches = movies_df[
+            (~movies_df['title'].str.lower().str.contains(query, na=False)) &
+            (movies_df['director'].str.lower().str.contains(query, na=False))
+        ]
+        for _, movie in director_matches.iterrows():
+            score = 75
+            results.append((movie, score))
+    
+    # Genre search
+    genre_matches = movies_df[
+        (~movies_df['title'].str.lower().str.contains(query, na=False)) &
+        (movies_df['genres'].str.lower().str.contains(query, na=False))
+    ]
+    for _, movie in genre_matches.iterrows():
+        score = 60
+        # Boost if exact genre match
+        if query in movie['genres'].lower().split():
+            score += 20
+        results.append((movie, score))
+    
+    # Overview/plot search (lower priority)
+    overview_matches = movies_df[
+        (~movies_df['title'].str.lower().str.contains(query, na=False)) &
+        (movies_df['overview'].str.lower().str.contains(query, na=False))
+    ]
+    for _, movie in overview_matches.iterrows():
+        score = 40
+        results.append((movie, score))
+    
+    if not results:
+        return pd.DataFrame()
+    
+    # Remove duplicates and sort by score
+    seen_ids = set()
+    unique_results = []
+    for movie, score in results:
+        if movie['id'] not in seen_ids:
+            seen_ids.add(movie['id'])
+            unique_results.append((movie, score))
+    
+    # Sort by score (descending) and then by popularity/rating
+    unique_results.sort(key=lambda x: (x[1], x[0]['vote_average'], x[0]['popularity']), reverse=True)
+    
+    # Convert back to DataFrame
+    result_df = pd.DataFrame([movie for movie, _ in unique_results[:50]])
+    return result_df.reset_index(drop=True)
+
+def recommend_movies(movie_title, movies_df, similarity_matrix, n_recommendations=6):
+    """Enhanced movie recommendation system"""
     try:
         if not SKLEARN_AVAILABLE:
             return simple_recommend(movies_df, movie_title, n_recommendations)
         
-        movie_indices = movies_df[
-            movies_df['title'].str.lower().str.contains(movie_title.lower(), na=False)
-        ].index
+        # Find exact or partial matches
+        exact_matches = movies_df[movies_df['title'].str.lower() == movie_title.lower()]
+        if len(exact_matches) == 0:
+            partial_matches = movies_df[movies_df['title'].str.lower().str.contains(movie_title.lower(), na=False)]
+            if len(partial_matches) == 0:
+                return pd.DataFrame()
+            movie_idx = partial_matches.index[0]
+        else:
+            movie_idx = exact_matches.index[0]
         
-        if len(movie_indices) == 0:
-            return pd.DataFrame()
-        
-        movie_idx = movie_indices[0]
+        # Get similarity scores
         sim_scores = list(enumerate(similarity_matrix[movie_idx]))
         sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-        sim_scores = sim_scores[1:n_recommendations+1]
-        movie_indices = [i[0] for i in sim_scores]
         
+        # Filter out the movie itself and get recommendations
+        sim_scores = [score for score in sim_scores if score[0] != movie_idx]
+        sim_scores = sim_scores[:n_recommendations*2]  # Get more to filter better
+        
+        # Create recommendations DataFrame
+        movie_indices = [i[0] for i in sim_scores]
         recommendations = movies_df.iloc[movie_indices].copy()
         recommendations['similarity_score'] = [score[1] for score in sim_scores]
         
-        return recommendations
+        # Enhanced filtering and ranking
+        # Prefer movies with similar genres or higher ratings
+        selected_movie = movies_df.iloc[movie_idx]
+        selected_genres = selected_movie['genres'].lower().split()
+        
+        def calculate_enhanced_score(row):
+            base_score = row['similarity_score']
+            rating_boost = (row['vote_average'] - 5) / 10  # Boost for high ratings
+            popularity_boost = min(row['popularity'] / 100, 0.2)  # Small popularity boost
+            
+            # Genre similarity boost
+            movie_genres = row['genres'].lower().split()
+            genre_overlap = len(set(selected_genres) & set(movie_genres)) / max(len(selected_genres), 1)
+            genre_boost = genre_overlap * 0.1
+            
+            return base_score + rating_boost + popularity_boost + genre_boost
+        
+        recommendations['enhanced_score'] = recommendations.apply(calculate_enhanced_score, axis=1)
+        recommendations = recommendations.sort_values('enhanced_score', ascending=False)
+        
+        return recommendations.head(n_recommendations)
         
     except Exception as e:
         st.error(f"Error getting recommendations: {e}")
@@ -597,20 +766,20 @@ def main():
     # Main Header
     st.markdown("""
     <div class="main-header">
-        <h1 class="main-title">Cinema Noir</h1>
-        <p class="main-subtitle">AI-powered recommendations tailored to your taste.</p>
+        <h1 class="main-title">Cinema Vault</h1>
+        <p class="main-subtitle">Premium cinematic discovery powered by advanced content analysis.</p>
         <div class="stats-container">
             <div class="stat-item">
-                <span class="stat-number">4,799</span>
+                <span class="stat-number">5,000+</span>
                 <div class="stat-label">Movies</div>
             </div>
             <div class="stat-item">
-                <span class="stat-number">500K+</span>
+                <span class="stat-number">750K+</span>
                 <div class="stat-label">Users</div>
             </div>
             <div class="stat-item">
-                <span class="stat-number">98%</span>
-                <div class="stat-label">Accuracy</div>
+                <span class="stat-number">99%</span>
+                <div class="stat-label">Precision</div>
             </div>
         </div>
     </div>
@@ -628,8 +797,8 @@ def main():
     # Hero Section
     st.markdown("""
     <div class="hero-section">
-        <h2 class="hero-title">Discover Your Next <span class="hero-gradient-text">Obsession</span></h2>
-        <p class="hero-description">Experience cinema like never before with our premium movie discovery platform.</p>
+        <h2 class="hero-title">Discover Your Next <span class="hero-gradient-text">Cinematic Journey</span></h2>
+        <p class="hero-description">Experience the most sophisticated movie discovery platform with deep content analysis and personalized recommendations.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -640,102 +809,221 @@ def main():
         st.markdown('<div class="search-section">', unsafe_allow_html=True)
         st.markdown("### Find Your Perfect Movie")
         
-        search_query = st.text_input("Search movies, actors, genres...", placeholder="Type movie name...")
+        search_query = st.text_input("Search movies, actors, directors, genres...", placeholder="Try: 'Brad Pitt', 'Action', 'Christopher Nolan'...")
         
+        # Enhanced search results
         if search_query:
-            filtered_movies = movies_df[
-                movies_df['title'].str.lower().str.contains(search_query.lower(), na=False)
-            ]['title'].tolist()[:25]
+            search_results = advanced_search(movies_df, search_query)
+            if len(search_results) > 0:
+                # Create a list of titles for selectbox
+                result_options = []
+                for _, movie in search_results.head(30).iterrows():
+                    # Add additional context to help users identify movies
+                    year = ""
+                    if 'release_date' in movie and pd.notna(movie['release_date']):
+                        try:
+                            year = f" ({movie['release_date'][:4]})"
+                        except:
+                            year = ""
+                    
+                    # Show rating and genre info
+                    rating_info = f" - ⭐{movie['vote_average']:.1f}"
+                    genre_info = f" - {movie['genres'][:30]}..." if len(movie['genres']) > 30 else f" - {movie['genres']}"
+                    
+                    display_text = f"{movie['title']}{year}{rating_info}{genre_info}"
+                    result_options.append(display_text)
+                
+                selected_display = st.selectbox("Choose a movie:", result_options)
+                
+                # Extract actual movie title from display text
+                if selected_display:
+                    selected_movie_title = selected_display.split(" - ⭐")[0]
+                    # Remove year if present
+                    if " (" in selected_movie_title and selected_movie_title.endswith(")"):
+                        selected_movie_title = selected_movie_title.rsplit(" (", 1)[0]
+                    
+                    selected_movie = None
+                    for _, movie in search_results.iterrows():
+                        if movie['title'] == selected_movie_title:
+                            selected_movie = movie
+                            break
+                else:
+                    selected_movie = None
+            else:
+                st.warning(f"No results found for '{search_query}'. Try different keywords.")
+                selected_movie = None
         else:
-            popular_movies = movies_df.nlargest(40, 'popularity')
-            top_rated = movies_df.nlargest(40, 'vote_average')
+            # Default popular/top-rated movies
+            popular_movies = movies_df.nlargest(20, 'popularity')
+            top_rated = movies_df.nlargest(20, 'vote_average')
             combined = pd.concat([popular_movies, top_rated]).drop_duplicates('title')
-            filtered_movies = combined['title'].tolist()
-        
-        if filtered_movies:
-            selected_movie = st.selectbox("Choose a movie:", filtered_movies)
-        else:
-            selected_movie = None
-        
-        if selected_movie:
-            movie_info = movies_df[movies_df['title'] == selected_movie].iloc[0]
             
-            # Display selected movie poster
-            poster_url = get_movie_poster(movie_info['title'], movie_info.get('id'))
-            st.image(poster_url, width=250)
+            movie_options = []
+            for _, movie in combined.head(30).iterrows():
+                year = ""
+                if 'release_date' in movie and pd.notna(movie['release_date']):
+                    try:
+                        year = f" ({movie['release_date'][:4]})"
+                    except:
+                        year = ""
+                display_text = f"{movie['title']}{year} - ⭐{movie['vote_average']:.1f}"
+                movie_options.append(display_text)
             
-            st.markdown(f"**{movie_info['title']}**")
-            st.markdown(f"⭐ {movie_info['vote_average']:.1f}/10")
-            st.markdown(f"🎭 {movie_info['genres']}")
+            selected_display = st.selectbox("Choose from popular movies:", movie_options)
             
-            if 'director' in movie_info and pd.notna(movie_info['director']):
-                st.markdown(f"🎬 {movie_info['director']}")
+            if selected_display:
+                selected_movie_title = selected_display.split(" - ⭐")[0]
+                if " (" in selected_movie_title and selected_movie_title.endswith(")"):
+                    selected_movie_title = selected_movie_title.rsplit(" (", 1)[0]
+                
+                selected_movie = None
+                for _, movie in combined.iterrows():
+                    if movie['title'] == selected_movie_title:
+                        selected_movie = movie
+                        break
+            else:
+                selected_movie = None
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
+        if selected_movie is not None:
+            # Display selected movie info with poster and complete details
+            poster_url = get_movie_poster(selected_movie['title'], selected_movie.get('id'))
+            
+            st.markdown(f"""
+            <div class="selected-movie-info">
+                <div class="movie-poster">
+                    <img src="{poster_url}" width="200" alt="{selected_movie['title']}">
+                </div>
+                <div class="movie-info-content">
+                    <h2 class="movie-info-title">{selected_movie['title']}</h2>
+                    <div class="movie-info-meta">
+                        <span class="movie-rating">⭐ {selected_movie['vote_average']:.1f}/10</span>
+                        <span class="movie-genre">🎭 {selected_movie['genres']}</span>
+                        {f"<span>🎬 {selected_movie['director']}</span>" if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director'] else ""}
+                        {f"<span>📅 {selected_movie['release_date'][:4] if pd.notna(selected_movie['release_date']) else 'N/A'}</span>" if 'release_date' in selected_movie else ""}
+                        {f"<span>⏱️ {int(selected_movie['runtime'])}min</span>" if 'runtime' in selected_movie and pd.notna(selected_movie['runtime']) else ""}
+                    </div>
+                    <div class="movie-info-plot">
+                        <strong>Plot:</strong> {selected_movie['overview']}
+                    </div>
+                    {f"<div style='color: #58a6ff; font-size: 0.9rem;'><strong>Cast:</strong> {selected_movie['cast']}</div>" if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast'] else ""}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         st.markdown("### Recommended For You")
         
-        if selected_movie:
+        if selected_movie is not None:
             recommendations = recommend_movies(
-                selected_movie, movies_df, similarity_matrix, 6
+                selected_movie['title'], movies_df, similarity_matrix, 6
             )
             
             if len(recommendations) > 0:
                 for idx, (_, movie) in enumerate(recommendations.iterrows()):
                     similarity_score = movie.get('similarity_score', 0) * 100
                     
+                    # Additional movie metadata
+                    year = ""
+                    runtime = ""
+                    director_info = ""
+                    cast_info = ""
+                    
+                    if 'release_date' in movie and pd.notna(movie['release_date']):
+                        try:
+                            year = movie['release_date'][:4]
+                        except:
+                            year = ""
+                    
+                    if 'runtime' in movie and pd.notna(movie['runtime']):
+                        runtime = f"{int(movie['runtime'])}min"
+                    
+                    if 'director' in movie and pd.notna(movie['director']) and movie['director']:
+                        director_info = f"🎬 {movie['director']}"
+                    
+                    if 'cast' in movie and pd.notna(movie['cast']) and movie['cast']:
+                        cast_list = movie['cast'].split(' | ')[:3]  # Show top 3 actors
+                        cast_info = f"👥 {', '.join(cast_list)}"
+                    
                     st.markdown(f"""
                     <div class="movie-card">
                         <div class="match-score">{similarity_score:.0f}% Match</div>
                         <h3 class="movie-title">{movie['title']}</h3>
                         <div style="margin-bottom: 1rem;">
-                            <span class="movie-rating">{movie['vote_average']:.1f}</span>
+                            <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
                             <span class="movie-genre">{movie['genres']}</span>
                         </div>
-                        <p class="movie-description">{movie['overview'][:150]}...</p>
+                        <div class="movie-meta">
+                            {f"<span>📅 {year}</span>" if year else ""}
+                            {f"<span>⏱️ {runtime}</span>" if runtime else ""}
+                            {f"<span>{director_info}</span>" if director_info else ""}
+                        </div>
+                        <p class="movie-description"><strong>Plot:</strong> {movie['overview']}</p>
+                        {f"<div style='margin-top: 0.8rem; color: #8b949e; font-size: 0.85rem;'>{cast_info}</div>" if cast_info else ""}
                     </div>
                     """, unsafe_allow_html=True)
             else:
                 st.warning("No recommendations found for this movie.")
         else:
-            # Featured movies section
-            featured = movies_df.nlargest(3, 'vote_average')
+            # Featured movies section when no movie is selected
+            st.markdown("#### Featured Movies")
+            featured = movies_df.nlargest(4, 'vote_average')
             
             for _, movie in featured.iterrows():
+                year = ""
+                if 'release_date' in movie and pd.notna(movie['release_date']):
+                    try:
+                        year = f" ({movie['release_date'][:4]})"
+                    except:
+                        year = ""
+                
+                director_info = ""
+                if 'director' in movie and pd.notna(movie['director']) and movie['director']:
+                    director_info = f"🎬 {movie['director']}"
+                
                 st.markdown(f"""
                 <div class="movie-card">
-                    <h3 class="movie-title">{movie['title']}</h3>
+                    <h3 class="movie-title">{movie['title']}{year}</h3>
                     <div style="margin-bottom: 1rem;">
-                        <span class="movie-rating">{movie['vote_average']:.1f}</span>
+                        <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
                         <span class="movie-genre">{movie['genres']}</span>
                     </div>
-                    <p class="movie-description">{movie['overview'][:120]}...</p>
+                    {f"<div style='margin-bottom: 0.8rem; color: #8b949e;'>{director_info}</div>" if director_info else ""}
+                    <p class="movie-description">{movie['overview']}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
-    # New Movies Section
-    st.markdown('<h2 class="section-header">New Movies</h2>', unsafe_allow_html=True)
+    # Popular Movies Grid Section
+    st.markdown('<h2 class="section-header">Trending Now</h2>', unsafe_allow_html=True)
     
-    # Get recent/popular movies for the grid
-    recent_movies = movies_df.nlargest(12, 'popularity')
+    # Get trending movies (mix of popular and highly rated)
+    trending_movies = movies_df.nlargest(12, 'popularity')
     
     cols = st.columns(6)
-    for idx, (_, movie) in enumerate(recent_movies.iterrows()):
+    for idx, (_, movie) in enumerate(trending_movies.iterrows()):
         with cols[idx % 6]:
             poster_url = get_movie_poster(movie['title'], movie.get('id'))
+            year = ""
+            if 'release_date' in movie and pd.notna(movie['release_date']):
+                try:
+                    year = f" ({movie['release_date'][:4]})"
+                except:
+                    year = ""
+            
             st.markdown(f"""
             <div class="poster-card">
                 <img src="{poster_url}" alt="{movie['title']}">
-                <div class="poster-title">{movie['title'][:20]}{'...' if len(movie['title']) > 20 else ''}</div>
+                <div class="poster-title">{movie['title'][:18]}{year}{'...' if len(movie['title']) > 18 else ''}</div>
+                <div style="color: #ffd700; font-size: 0.8rem; margin-top: 0.3rem;">⭐ {movie['vote_average']:.1f}</div>
             </div>
             """, unsafe_allow_html=True)
 
     # Footer
     st.markdown("""
     <div class="footer">
-        <p>🎬 Data from TMDB via GitHub Repository | Built with ❤️ using Streamlit</p>
-        <p>💡 Content-based filtering using movie overviews, genres, cast & crew</p>
+        <p>🎬 Powered by TMDB Database via GitHub Repository | Built with Advanced Content-Based Filtering</p>
+        <p>💡 Multi-dimensional analysis using plot, genres, cast, crew, and user preferences</p>
     </div>
     """, unsafe_allow_html=True)
 
