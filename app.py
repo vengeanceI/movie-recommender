@@ -891,27 +891,33 @@ def main():
             # Display selected movie info with poster and complete details
             poster_url = get_movie_poster(selected_movie['title'], selected_movie.get('id'))
             
-            st.markdown(f"""
-            <div class="selected-movie-info">
-                <div class="movie-poster">
-                    <img src="{poster_url}" width="200" alt="{selected_movie['title']}">
-                </div>
-                <div class="movie-info-content">
-                    <h2 class="movie-info-title">{selected_movie['title']}</h2>
-                    <div class="movie-info-meta">
-                        <span class="movie-rating">⭐ {selected_movie['vote_average']:.1f}/10</span>
-                        <span class="movie-genre">🎭 {selected_movie['genres']}</span>
-                        {f"<span>🎬 {selected_movie['director']}</span>" if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director'] else ""}
-                        {f"<span>📅 {selected_movie['release_date'][:4] if pd.notna(selected_movie['release_date']) else 'N/A'}</span>" if 'release_date' in selected_movie else ""}
-                        {f"<span>⏱️ {int(selected_movie['runtime'])}min</span>" if 'runtime' in selected_movie and pd.notna(selected_movie['runtime']) else ""}
-                    </div>
-                    <div class="movie-info-plot">
-                        <strong>Plot:</strong> {selected_movie['overview']}
-                    </div>
-                    {f"<div style='color: #58a6ff; font-size: 0.9rem;'><strong>Cast:</strong> {selected_movie['cast']}</div>" if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast'] else ""}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Display selected movie info with poster and complete details
+            st.markdown('<div class="selected-movie-info">', unsafe_allow_html=True)
+            
+            # Create two columns for poster and info
+            movie_col1, movie_col2 = st.columns([1, 2])
+            
+            with movie_col1:
+                st.image(poster_url, width=200, caption=selected_movie['title'])
+                st.markdown(f"**⭐ {selected_movie['vote_average']:.1f}/10**")
+                st.markdown(f"**🎭 {selected_movie['genres']}**")
+                if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director']:
+                    st.markdown(f"**🎬 {selected_movie['director']}**")
+                if 'release_date' in selected_movie and pd.notna(selected_movie['release_date']):
+                    try:
+                        st.markdown(f"**📅 {selected_movie['release_date'][:4]}**")
+                    except:
+                        pass
+                if 'runtime' in selected_movie and pd.notna(selected_movie['runtime']):
+                    st.markdown(f"**⏱️ {int(selected_movie['runtime'])}min**")
+            
+            with movie_col2:
+                st.markdown(f"### {selected_movie['title']}")
+                st.markdown(f"**Plot:** {selected_movie['overview']}")
+                if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast']:
+                    st.markdown(f"**Cast:** {selected_movie['cast']}")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("### Recommended For You")
         
@@ -922,9 +928,7 @@ def main():
             
             if len(recommendations) > 0:
                 for idx, (_, movie) in enumerate(recommendations.iterrows()):
-                    similarity_score = movie.get('similarity_score', 0) * 100
-                    
-                    # Additional movie metadata
+                    # Additional movie metadata formatting
                     year = ""
                     runtime = ""
                     director_info = ""
@@ -946,6 +950,7 @@ def main():
                         cast_list = movie['cast'].split(' | ')[:3]  # Show top 3 actors
                         cast_info = f"👥 {', '.join(cast_list)}"
                     
+                    # Create recommendation card
                     st.markdown(f"""
                     <div class="movie-card">
                         <div class="match-score">{similarity_score:.0f}% Match</div>
@@ -954,15 +959,32 @@ def main():
                             <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
                             <span class="movie-genre">{movie['genres']}</span>
                         </div>
-                        <div class="movie-meta">
-                            {f"<span>📅 {year}</span>" if year else ""}
-                            {f"<span>⏱️ {runtime}</span>" if runtime else ""}
-                            {f"<span>{director_info}</span>" if director_info else ""}
-                        </div>
-                        <p class="movie-description"><strong>Plot:</strong> {movie['overview']}</p>
-                        {f"<div style='margin-top: 0.8rem; color: #8b949e; font-size: 0.85rem;'>{cast_info}</div>" if cast_info else ""}
-                    </div>
                     """, unsafe_allow_html=True)
+                    
+                    # Add metadata if available
+                    if year or runtime or director_info:
+                        metadata_parts = []
+                        if year: metadata_parts.append(f"📅 {year}")
+                        if runtime: metadata_parts.append(f"⏱️ {runtime}")
+                        if director_info: metadata_parts.append(director_info)
+                        
+                        st.markdown(f"""
+                        <div class="movie-meta">
+                            {' | '.join(metadata_parts)}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Plot and cast
+                    st.markdown(f"""
+                        <p class="movie-description"><strong>Plot:</strong> {movie['overview']}</p>
+                    """, unsafe_allow_html=True)
+                    
+                    if cast_info:
+                        st.markdown(f"""
+                        <div style='margin-top: 0.8rem; color: #8b949e; font-size: 0.85rem;'>{cast_info}</div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.warning("No recommendations found for this movie.")
         else:
@@ -982,6 +1004,7 @@ def main():
                 if 'director' in movie and pd.notna(movie['director']) and movie['director']:
                     director_info = f"🎬 {movie['director']}"
                 
+                # Create featured movie card
                 st.markdown(f"""
                 <div class="movie-card">
                     <h3 class="movie-title">{movie['title']}{year}</h3>
@@ -989,7 +1012,14 @@ def main():
                         <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
                         <span class="movie-genre">{movie['genres']}</span>
                     </div>
-                    {f"<div style='margin-bottom: 0.8rem; color: #8b949e;'>{director_info}</div>" if director_info else ""}
+                """, unsafe_allow_html=True)
+                
+                if director_info:
+                    st.markdown(f"""
+                    <div style='margin-bottom: 0.8rem; color: #8b949e;'>{director_info}</div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown(f"""
                     <p class="movie-description">{movie['overview']}</p>
                 </div>
                 """, unsafe_allow_html=True)
