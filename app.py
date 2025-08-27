@@ -719,7 +719,7 @@ def create_movie_card(movie, show_match_score=False, similarity_score_pct=0):
     director_info = ""
     if 'director' in movie and pd.notna(movie['director']) and movie['director']:
         director_clean = clean_text(movie['director'])
-        director_info = f"Director: {director_clean}"
+        director_info = director_clean
     
     cast_info = ""
     if 'cast' in movie and pd.notna(movie['cast']) and movie['cast']:
@@ -733,18 +733,22 @@ def create_movie_card(movie, show_match_score=False, similarity_score_pct=0):
     if show_match_score:
         match_score_html = f'<div class="match-score">{similarity_score_pct:.0f}% Match</div>'
     
+    year_display = f"📅 {year}" if year else ""
+    runtime_display = f"⏱️ {runtime}" if runtime else ""
+    director_display = f"🎬 {director_info}" if director_info else ""
+    
     return f"""
     <div class="movie-card">
         {match_score_html}
-        <h3 class="movie-title">{movie['title']}</h3>
+        <h3 class="movie-title">{clean_text(movie['title'])}</h3>
         <div style="margin-bottom: 1rem;">
             <span class="movie-rating">⭐ {movie['vote_average']:.1f}</span>
-            <span class="movie-genre">{movie['genres']}</span>
+            <span class="movie-genre">{clean_text(movie['genres'])}</span>
         </div>
         <div class="movie-meta">
-            {f"<span>📅 {year}</span>" if year else ""}
-            {f"<span>⏱️ {runtime}</span>" if runtime else ""}
-            {f"<span>🎬 {director_clean}</span>" if 'director' in movie and pd.notna(movie['director']) and movie['director'] else ""}
+            {f"<span>{year_display}</span>" if year_display else ""}
+            {f"<span>{runtime_display}</span>" if runtime_display else ""}
+            {f"<span>{director_display}</span>" if director_display else ""}
         </div>
         <div class="movie-description"><strong>Plot:</strong> {full_plot}</div>
         {f"<div style='margin-top: 1rem; color: #8b949e; font-size: 0.9rem;'>{cast_info}</div>" if cast_info else ""}
@@ -790,7 +794,8 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns([1, 2])
+    # Search and Recommendation Section
+    col1, col2, col3 = st.columns([1, 2, 1])
     
     with col1:
         st.markdown('<div class="search-section">', unsafe_allow_html=True)
@@ -856,7 +861,7 @@ def main():
                             year = ""
                     
                     rating_info = f" - ⭐{movie['vote_average']:.1f}"
-                    display_text = f"{movie['title']}{year}{rating_info}"
+                    display_text = f"{clean_text(movie['title'])}{year}{rating_info}"
                     result_options.append(display_text)
                 
                 selected_display = st.selectbox(
@@ -871,7 +876,7 @@ def main():
                         selected_movie_title = selected_movie_title.rsplit(" (", 1)[0]
                     
                     for _, movie in search_results.iterrows():
-                        if movie['title'] == selected_movie_title:
+                        if clean_text(movie['title']) == selected_movie_title:
                             selected_movie = movie
                             break
             
@@ -892,7 +897,7 @@ def main():
                         year = f" ({movie['release_date'][:4]})"
                     except:
                         year = ""
-                display_text = f"{movie['title']}{year} - ⭐{movie['vote_average']:.1f}"
+                display_text = f"{clean_text(movie['title'])}{year} - ⭐{movie['vote_average']:.1f}"
                 movie_options.append(display_text)
             
             selected_display = st.selectbox("Choose from popular movies:", movie_options)
@@ -903,7 +908,7 @@ def main():
                     selected_movie_title = selected_movie_title.rsplit(" (", 1)[0]
                 
                 for _, movie in combined.iterrows():
-                    if movie['title'] == selected_movie_title:
+                    if clean_text(movie['title']) == selected_movie_title:
                         selected_movie = movie
                         break
         
@@ -943,13 +948,13 @@ def main():
             st.markdown(f"""
             <div class="selected-movie-info">
                 <div class="movie-poster">
-                    <img src="{poster_url}" width="200" alt="{selected_movie['title']}">
+                    <img src="{poster_url}" width="200" alt="{clean_text(selected_movie['title'])}">
                 </div>
                 <div class="movie-info-content">
-                    <h2 class="movie-info-title">{selected_movie['title']}</h2>
+                    <h2 class="movie-info-title">{clean_text(selected_movie['title'])}</h2>
                     <div class="movie-info-meta">
                         <span class="movie-rating">⭐ {selected_movie['vote_average']:.1f}/10</span>
-                        <span class="movie-genre">🎭 {selected_movie['genres']}</span>
+                        <span class="movie-genre">🎭 {clean_text(selected_movie['genres'])}</span>
                         {f"<span>{director_display}</span>" if director_display else ""}
                         {f"<span>{release_info}</span>" if release_info else ""}
                         {f"<span>{runtime_info}</span>" if runtime_info else ""}
@@ -977,8 +982,12 @@ def main():
             else:
                 st.warning("No recommendations found for this movie. Try selecting a different movie.")
         else:
-            st.markdown("#### Featured Movies")
-            featured = movies_df.nlargest(6, 'vote_average')
+            st.info("Select a movie from the left to see personalized recommendations here.")
+    
+    with col3:
+        if selected_movie is None:
+            st.markdown("### Featured Movies")
+            featured = movies_df.nlargest(4, 'vote_average')
             
             for _, movie in featured.iterrows():
                 card_html = create_movie_card(movie, False, 0)
