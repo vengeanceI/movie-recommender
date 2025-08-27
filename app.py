@@ -1040,8 +1040,8 @@ def main():
                     person_info = get_person_info(search_query, "actor")
                     if person_info and person_info.get('biography'):
                         bio = person_info['biography']
-                        if len(bio) > 300:
-                            bio = bio[:300] + "..."
+                        if len(bio) > 200:
+                            bio = bio[:200] + "..."
                         
                         st.markdown(f"""
                         <div class="actor-bio">
@@ -1057,8 +1057,8 @@ def main():
                     person_info = get_person_info(search_query, "director")
                     if person_info and person_info.get('biography'):
                         bio = person_info['biography']
-                        if len(bio) > 300:
-                            bio = bio[:300] + "..."
+                        if len(bio) > 200:
+                            bio = bio[:200] + "..."
                         
                         st.markdown(f"""
                         <div class="actor-bio">
@@ -1092,9 +1092,9 @@ def main():
                     # Add context based on search type
                     context_info = ""
                     if search_type == "actor" and 'cast' in movie:
-                        context_info = f" - 🎭 {movie['genres'][:20]}..."
+                        context_info = f" - {movie['genres'][:25]}..."
                     elif search_type == "director" and 'director' in movie:
-                        context_info = f" - 🎬 {movie['genres'][:20]}..."
+                        context_info = f" - {movie['genres'][:25]}..."
                     elif search_type == "genre":
                         context_info = f" - {movie['genres']}"
                     
@@ -1157,8 +1157,9 @@ def main():
             # Display selected movie info with complete plot and poster
             poster_url = get_movie_poster(selected_movie['title'], selected_movie.get('id'))
             
-            # Get complete overview
+            # Get complete overview - clean any HTML tags
             full_overview = selected_movie['overview']
+            full_overview = re.sub(r'<[^>]+>', '', str(full_overview))  # Remove HTML tags
             
             # Format runtime
             runtime_info = ""
@@ -1178,6 +1179,17 @@ def main():
                 except:
                     release_info = ""
             
+            # Clean cast and director info
+            cast_display = ""
+            if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast']:
+                cast_clean = re.sub(r'<[^>]+>', '', str(selected_movie['cast']))
+                cast_display = f"**Cast:** {cast_clean}"
+            
+            director_display = ""
+            if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director']:
+                director_clean = re.sub(r'<[^>]+>', '', str(selected_movie['director']))
+                director_display = f"🎬 {director_clean}"
+            
             st.markdown(f"""
             <div class="selected-movie-info">
                 <div class="movie-poster">
@@ -1188,14 +1200,14 @@ def main():
                     <div class="movie-info-meta">
                         <span class="movie-rating">⭐ {selected_movie['vote_average']:.1f}/10</span>
                         <span class="movie-genre">🎭 {selected_movie['genres']}</span>
-                        {f"<span>🎬 {selected_movie['director']}</span>" if 'director' in selected_movie and pd.notna(selected_movie['director']) and selected_movie['director'] else ""}
+                        {f"<span>{director_display}</span>" if director_display else ""}
                         {f"<span>{release_info}</span>" if release_info else ""}
                         {f"<span>{runtime_info}</span>" if runtime_info else ""}
                     </div>
                     <div class="movie-info-plot">
                         <strong>Plot:</strong> {full_overview}
                     </div>
-                    {f"<div style='color: #58a6ff; font-size: 0.9rem; margin-top: 1rem;'><strong>Cast:</strong> {selected_movie['cast']}</div>" if 'cast' in selected_movie and pd.notna(selected_movie['cast']) and selected_movie['cast'] else ""}
+                    {f"<div style='color: #58a6ff; font-size: 0.9rem; margin-top: 1rem;'>{cast_display}</div>" if cast_display else ""}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1238,8 +1250,8 @@ def main():
                         cast_list = movie['cast'].split(' | ')[:3]
                         cast_info = f"👥 {', '.join(cast_list)}"
                     
-                    # Complete plot overview
-                    full_plot = movie['overview']
+                    # Complete plot overview - clean HTML tags
+                    full_plot = re.sub(r'<[^>]+>', '', str(movie['overview']))
                     
                     st.markdown(f"""
                     <div class="movie-card">
@@ -1277,7 +1289,7 @@ def main():
                 if 'director' in movie and pd.notna(movie['director']) and movie['director']:
                     director_info = f"🎬 {movie['director']}"
                 
-                full_plot = movie['overview']
+                full_plot = re.sub(r'<[^>]+>', '', str(movie['overview']))
                 
                 st.markdown(f"""
                 <div class="movie-card">
