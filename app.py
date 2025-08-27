@@ -742,4 +742,4 @@ def main():
                     </div>
                     <div class="movie-info-plot">
                         <strong>Plot:</strong> {selected_movie['overview']}
-                
+                    </div>
