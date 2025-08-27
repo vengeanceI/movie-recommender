@@ -1,4 +1,4 @@
-common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
+        common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
                         'johnny depp', 'morgan freeman', 'samuel l jackson', 'matt damon', 'christian bale',
                         'scarlett johansson', 'jennifer lawrence', 'angelina jolie', 'meryl streep',
                         'denzel washington', 'tom cruise', 'robert de niro', 'al pacino', 'heath ledger']
