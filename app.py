@@ -4,8 +4,13 @@ import requests
 import json
 import gzip
 import io
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+try:
+    from sklearn.feature_extraction.text import CountVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    st.error("❌ scikit-learn not installed. Please check your requirements.txt")
 
 # Page config
 st.set_page_config(
@@ -223,6 +228,10 @@ def create_fallback_data():
 @st.cache_data
 def create_similarity_matrix(movies_df):
     """Create similarity matrix for recommendations"""
+    if not SKLEARN_AVAILABLE:
+        st.error("❌ Cannot create recommendations: scikit-learn not available")
+        return None
+        
     try:
         cv = CountVectorizer(
             max_features=5000,
