@@ -170,12 +170,13 @@ header {visibility: hidden;}
     background: rgba(33, 38, 45, 0.8);
     border: 1px solid rgba(48, 54, 61, 0.8);
     border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
     backdrop-filter: blur(10px);
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
+    min-height: 200px;
 }
 
 .movie-card:hover {
@@ -201,41 +202,45 @@ header {visibility: hidden;}
 }
 
 .movie-title {
-    font-size: 1.4rem;
+    font-size: 1.5rem;
     font-weight: 600;
     color: #f0f6fc;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.8rem;
 }
 
 .movie-rating {
     display: inline-block;
     background: linear-gradient(135deg, #ffd700, #ffb700);
     color: #000;
-    padding: 0.3rem 0.8rem;
+    padding: 0.4rem 1rem;
     border-radius: 8px;
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     margin-right: 1rem;
 }
 
 .movie-genre {
     color: #58a6ff;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-weight: 500;
 }
 
 .movie-description {
-    color: #8b949e;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    margin-top: 1rem;
+    color: #c9d1d9;
+    font-size: 1rem;
+    line-height: 1.7;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(13, 17, 23, 0.6);
+    border-radius: 8px;
+    border-left: 3px solid #39d353;
 }
 
 .movie-meta {
     display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-    font-size: 0.9rem;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    font-size: 0.95rem;
     color: #8b949e;
 }
 
@@ -264,11 +269,12 @@ header {visibility: hidden;}
     background: rgba(33, 38, 45, 0.9);
     border: 1px solid rgba(48, 54, 61, 0.8);
     border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
     display: flex;
-    gap: 1.5rem;
+    gap: 2rem;
     align-items: flex-start;
+    min-height: 400px;
 }
 
 .movie-poster {
@@ -279,28 +285,35 @@ header {visibility: hidden;}
 
 .movie-info-content {
     flex: 1;
+    min-height: 350px;
 }
 
 .movie-info-title {
-    font-size: 1.6rem;
+    font-size: 1.8rem;
     font-weight: 600;
     color: #f0f6fc;
-    margin-bottom: 0.8rem;
+    margin-bottom: 1rem;
 }
 
 .movie-info-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
 }
 
 .movie-info-plot {
     color: #c9d1d9;
-    line-height: 1.6;
-    font-size: 0.95rem;
-    margin-bottom: 1rem;
+    line-height: 1.7;
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+    max-height: none;
+    overflow: visible;
+    padding: 1rem;
+    background: rgba(13, 17, 23, 0.6);
+    border-radius: 8px;
+    border-left: 3px solid #58a6ff;
 }
 
 /* Custom button styling */
@@ -631,9 +644,11 @@ def advanced_search(movies_df, query, search_type="auto"):
     query = query.lower().strip()
     results = []
     
-    # Detect search type if auto
+    # Always search across all categories for better results
+    search_categories = ["title", "actor", "director", "genre", "plot"]
+    
+    # Detect primary search type for display purposes
     if search_type == "auto":
-        # Common actor names (you can expand this list)
         common_actors = ['brad pitt', 'leonardo dicaprio', 'tom hanks', 'will smith', 'robert downey jr',
                         'johnny depp', 'morgan freeman', 'samuel l jackson', 'matt damon', 'christian bale',
                         'scarlett johansson', 'jennifer lawrence', 'angelina jolie', 'meryl streep',
@@ -641,97 +656,137 @@ def advanced_search(movies_df, query, search_type="auto"):
         
         common_directors = ['christopher nolan', 'martin scorsese', 'quentin tarantino', 'steven spielberg',
                            'james cameron', 'ridley scott', 'david fincher', 'tim burton', 'peter jackson',
-                           'francis ford coppola', 'stanley kubrick', 'alfred hitchcock']
+                           'francis ford coppola', 'stanley kubrick', 'alfred hitchcock', 'george lucas',
+                           'jj abrams', 'denis villeneuve', 'christopher mcquarrie', 'guy ritchie']
         
         common_genres = ['action', 'adventure', 'comedy', 'drama', 'horror', 'thriller', 'romance',
-                        'science fiction', 'fantasy', 'animation', 'crime', 'mystery', 'western',
+                        'science fiction', 'sci-fi', 'fantasy', 'animation', 'crime', 'mystery', 'western',
                         'war', 'documentary', 'biography', 'history', 'music', 'family']
         
-        # Determine search type
+        # Determine primary search type for context
         if any(actor in query for actor in common_actors):
             search_type = "actor"
         elif any(director in query for director in common_directors):
             search_type = "director"  
         elif any(genre in query for genre in common_genres):
             search_type = "genre"
-        else:
-            # Check for partial matches or if query contains common name patterns
-            if len(query.split()) >= 2 and not any(word in query for word in ['the', 'a', 'an', 'of', 'in', 'on', 'at']):
-                search_type = "person"  # Likely an actor/director name
-            else:
+        elif len(query.split()) >= 2 and not any(word in query for word in ['the', 'a', 'an', 'of', 'in', 'on', 'at']):
+            # Check if it might be a person name by looking in the data
+            if 'cast_searchable' in movies_df.columns:
+                cast_matches = movies_df[movies_df['cast_searchable'].str.contains(re.escape(query), na=False, regex=True)]
+                if len(cast_matches) > 0:
+                    search_type = "actor"
+            if 'director_searchable' in movies_df.columns and search_type == "auto":
+                director_matches = movies_df[movies_df['director_searchable'].str.contains(re.escape(query), na=False, regex=True)]
+                if len(director_matches) > 0:
+                    search_type = "director"
+            if search_type == "auto":
                 search_type = "title"
+        else:
+            search_type = "title"
     
-    # Movie title search (highest priority)
-    if search_type in ["auto", "title"]:
-        # Exact matches
-        exact_matches = movies_df[movies_df['title'].str.lower() == query]
-        for _, movie in exact_matches.iterrows():
-            results.append((movie, 100, "exact_title"))
+    # Movie title search - exact matches first
+    exact_matches = movies_df[movies_df['title'].str.lower() == query]
+    for _, movie in exact_matches.iterrows():
+        results.append((movie, 100, "exact_title"))
+    
+    # Title partial matches
+    title_partials = movies_df[
+        (movies_df['title'].str.lower() != query) &
+        (movies_df['title'].str.lower().str.contains(re.escape(query), na=False))
+    ]
+    for _, movie in title_partials.iterrows():
+        score = 85 + similarity_score(query, movie['title']) * 15
+        results.append((movie, score, "partial_title"))
+    
+    # Actor/Cast search - check if cast columns exist and have data
+    if 'cast' in movies_df.columns:
+        # Create a temporary searchable cast field if it doesn't exist
+        if 'cast_searchable' not in movies_df.columns:
+            movies_df['cast_searchable'] = movies_df['cast'].fillna('').str.lower().str.replace('|', ' ')
         
-        # Partial title matches
-        partial_matches = movies_df[
-            (movies_df['title'].str.lower() != query) &
-            (movies_df['title'].str.lower().str.contains(re.escape(query), na=False))
-        ]
-        for _, movie in partial_matches.iterrows():
-            score = 90 + similarity_score(query, movie['title']) * 10
-            results.append((movie, score, "partial_title"))
-    
-    # Actor/Cast search
-    if search_type in ["auto", "actor", "person"] and 'cast_searchable' in movies_df.columns:
         cast_matches = movies_df[
             movies_df['cast_searchable'].str.contains(re.escape(query), na=False, regex=True)
         ]
         for _, movie in cast_matches.iterrows():
-            # Higher score if actor appears earlier in cast (more prominent role)
-            cast_list = movie['cast_searchable']
-            position = cast_list.find(query)
-            if position != -1:
-                score = 85 - (position / 10)  # Earlier position = higher score
-                # Bonus for exact name match
-                if query in cast_list.split():
-                    score += 10
-                results.append((movie, min(score, 95), "actor"))
+            score = 80
+            cast_text = movie['cast_searchable']
+            # Boost score for exact name matches
+            if f" {query} " in f" {cast_text} " or cast_text.startswith(query + " ") or cast_text.endswith(" " + query):
+                score += 15
+            # Earlier position in cast = higher score
+            position = cast_text.find(query)
+            if position < 30:  # Actor appears early in cast
+                score += 10
+            results.append((movie, score, "actor"))
     
-    # Director search
-    if search_type in ["auto", "director", "person"] and 'director_searchable' in movies_df.columns:
+    # Director search - check if director columns exist and have data
+    if 'director' in movies_df.columns:
+        # Create searchable director field if needed
+        if 'director_searchable' not in movies_df.columns:
+            movies_df['director_searchable'] = movies_df['director'].fillna('').str.lower().str.replace('|', ' ')
+        
         director_matches = movies_df[
             movies_df['director_searchable'].str.contains(re.escape(query), na=False, regex=True)
         ]
         for _, movie in director_matches.iterrows():
-            score = 80
-            # Bonus for exact director match
-            if query in movie['director_searchable'].split():
+            score = 85  # Higher score for directors
+            director_text = movie['director_searchable']
+            # Boost for exact director match
+            if f" {query} " in f" {director_text} " or director_text.startswith(query + " ") or director_text.endswith(" " + query) or director_text == query:
                 score += 15
             results.append((movie, score, "director"))
     
     # Genre search
-    if search_type in ["auto", "genre"]:
-        genre_matches = movies_df[
-            movies_df['genres'].str.lower().str.contains(re.escape(query), na=False)
-        ]
-        for _, movie in genre_matches.iterrows():
-            score = 70
-            # Boost for exact genre match
-            genres_list = movie['genres'].lower().split()
-            if query in genres_list:
-                score += 20
-            results.append((movie, score, "genre"))
+    genre_matches = movies_df[
+        movies_df['genres'].str.lower().str.contains(re.escape(query), na=False)
+    ]
+    for _, movie in genre_matches.iterrows():
+        score = 70
+        genres_text = movie['genres'].lower()
+        # Exact genre match
+        genre_words = genres_text.split()
+        if query in genre_words:
+            score += 25
+        # Partial genre match
+        elif query in genres_text:
+            score += 15
+        results.append((movie, score, "genre"))
     
-    # Overview/plot search (lowest priority but still important)
-    if search_type == "auto":
-        overview_matches = movies_df[
-            movies_df['overview'].str.lower().str.contains(re.escape(query), na=False)
-        ]
-        for _, movie in overview_matches.iterrows():
-            score = 50
-            # Count occurrences in overview for relevance
-            occurrences = movie['overview'].lower().count(query)
-            score += min(occurrences * 5, 20)
-            results.append((movie, score, "plot"))
+    # Overview/plot search for comprehensive results
+    overview_matches = movies_df[
+        movies_df['overview'].str.lower().str.contains(re.escape(query), na=False)
+    ]
+    for _, movie in overview_matches.iterrows():
+        score = 45
+        overview_text = movie['overview'].lower()
+        # Multiple occurrences boost score
+        occurrences = overview_text.count(query)
+        score += min(occurrences * 8, 25)
+        results.append((movie, score, "plot"))
+    
+    # If no results, try fuzzy matching
+    if not results:
+        for _, movie in movies_df.iterrows():
+            # Fuzzy title matching
+            title_similarity = similarity_score(query, movie['title'])
+            if title_similarity > 0.6:
+                results.append((movie, title_similarity * 60, "fuzzy_title"))
+            
+            # Fuzzy cast matching if cast exists
+            if 'cast' in movie and pd.notna(movie['cast']):
+                cast_similarity = similarity_score(query, movie['cast'].lower())
+                if cast_similarity > 0.4:
+                    results.append((movie, cast_similarity * 50, "fuzzy_cast"))
+            
+            # Fuzzy director matching if director exists  
+            if 'director' in movie and pd.notna(movie['director']):
+                director_similarity = similarity_score(query, movie['director'].lower())
+                if director_similarity > 0.5:
+                    results.append((movie, director_similarity * 55, "fuzzy_director"))
     
     if not results:
-        return pd.DataFrame(), search_type, f"No results found for '{query}'"
+        return pd.DataFrame(), search_type, f"No results found for '{query}'. Try different keywords or check spelling."
     
     # Remove duplicates and sort by score
     seen_ids = set()
@@ -741,15 +796,14 @@ def advanced_search(movies_df, query, search_type="auto"):
             seen_ids.add(movie['id'])
             unique_results.append((movie, score, match_type))
     
-    # Sort by score (descending) then by popularity/rating
+    # Sort by score (descending) then by popularity/rating for ties
     unique_results.sort(key=lambda x: (x[1], x[0]['vote_average'], x[0]['popularity']), reverse=True)
     
     # Convert back to DataFrame and add match info
     result_df = pd.DataFrame([movie for movie, _, _ in unique_results[:30]])
-    match_types = [match_type for _, _, match_type in unique_results[:30]]
-    scores = [score for _, score, _ in unique_results[:30]]
-    
     if len(result_df) > 0:
+        match_types = [match_type for _, _, match_type in unique_results[:30]]
+        scores = [score for _, score, _ in unique_results[:30]]
         result_df['match_type'] = match_types
         result_df['search_score'] = scores
     
