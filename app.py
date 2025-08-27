@@ -9,8 +9,41 @@ try:
     from sklearn.metrics.pairwise import cosine_similarity
     SKLEARN_AVAILABLE = True
 except ImportError:
-    SKLEARN_AVAILABLE = False
-    st.error("❌ scikit-learn not installed. Please check your requirements.txt")
+    try:
+        # Try alternative import
+        import sklearn
+        from sklearn.feature_extraction.text import CountVectorizer  
+        from sklearn.metrics.pairwise import cosine_similarity
+        SKLEARN_AVAILABLE = True
+    except ImportError:
+        SKLEARN_AVAILABLE = False
+        # Create simple fallback recommendation system
+        import random
+        def simple_recommend(movies_df, selected_title, n_recommendations=5):
+            """Simple genre-based recommendation fallback"""
+            try:
+                selected_movie = movies_df[movies_df['title'] == selected_title].iloc[0]
+                selected_genres = selected_movie['genres'].lower()
+                
+                # Find movies with similar genres
+                similar_movies = movies_df[
+                    (movies_df['title'] != selected_title) & 
+                    (movies_df['genres'].str.lower().str.contains('|'.join(selected_genres.split()[:2]), na=False))
+                ].copy()
+                
+                if len(similar_movies) < n_recommendations:
+                    # Add high-rated movies if not enough similar ones
+                    additional = movies_df[
+                        (movies_df['title'] != selected_title) & 
+                        (~movies_df['title'].isin(similar_movies['title']))
+                    ].nlargest(n_recommendations - len(similar_movies), 'vote_average')
+                    similar_movies = pd.concat([similar_movies, additional])
+                
+                result = similar_movies.head(n_recommendations).copy()
+                result['similarity_score'] = [0.8 - i*0.1 for i in range(len(result))]  # Fake scores
+                return result
+            except:
+                return pd.DataFrame()
 
 # Page config
 st.set_page_config(
@@ -281,6 +314,12 @@ def get_movie_poster(movie_title, tmdb_id=None):
 def recommend_movies(movie_title, movies_df, similarity_matrix, n_recommendations=5):
     """Get movie recommendations based on content similarity"""
     try:
+        # If sklearn not available, use simple fallback
+        if not SKLEARN_AVAILABLE:
+            st.info("🔄 Using simplified recommendation system (genre-based)")
+            return simple_recommend(movies_df, movie_title, n_recommendations)
+        
+        # Original sklearn-based recommendations
         movie_indices = movies_df[
             movies_df['title'].str.lower().str.contains(movie_title.lower(), na=False)
         ].index
@@ -366,7 +405,10 @@ def main():
         with st.spinner("🧮 Computing movie similarities..."):
             similarity_matrix = create_similarity_matrix(movies_df)
             
-            if similarity_matrix is None:
+            if similarity_matrix is None and not SKLEARN_AVAILABLE:
+                st.warning("⚠️ Using simplified recommendation system - install scikit-learn for advanced features")
+                similarity_matrix = None  # Will use fallback system
+            elif similarity_matrix is None:
                 st.error("❌ Could not create recommendation engine.")
                 return
     
